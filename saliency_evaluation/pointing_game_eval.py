@@ -7,15 +7,15 @@ from transformers import BertTokenizer, BertForSequenceClassification
 import os
 
 EXPLANATION_METHODS = {
-    "Attention": AttentionExplainer,
-    "Saliency": GradientNPropabationExplainer,
-    "DeepLift": GradientNPropabationExplainer,
-    "GuidedBackprop": GradientNPropabationExplainer,
-    "InputXGradient": GradientNPropabationExplainer,
-    "IntegratedGradients": GradientNPropabationExplainer,
-    "Occlusion": OcclusionExplainer,
+    #"Attention": AttentionExplainer,
+    #"Saliency": GradientNPropabationExplainer,
+    #"DeepLift": GradientNPropabationExplainer,
+    #"GuidedBackprop": GradientNPropabationExplainer,
+    #"InputXGradient": GradientNPropabationExplainer,
+    #"IntegratedGradients": GradientNPropabationExplainer,
+    #"Occlusion": OcclusionExplainer,
     #"ShapleyValue": ShapleyValueExplainer,
-    #"Lime": LimeExplainer,
+    "Lime": LimeExplainer,
 }
 
 def main(args):
@@ -23,12 +23,23 @@ def main(args):
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
 
+    # convert strings to numbers
+    args.num_labels = int(args.num_labels) if args.num_labels else None
+    args.batch_size = int(args.batch_size) if args.batch_size else None
+    args.max_length = int(args.max_length) if args.max_length else None
+    args.num_examples = int(args.num_examples) if args.num_examples else None
+    args.seed = int(args.seed) if args.seed else None
+    args.shap_n_samples = int(args.shap_n_samples) if args.shap_n_samples else None
+    args.split_ratio = float(args.split_ratio) if args.split_ratio else None
+    args.embedding_attributions = args.embedding_attributions if args.embedding_attributions != 'None' else None
+
     pointing_game = GridPointingGame(
         model_name_or_path=args.model_dir,
         dataset=args.dataset_name,
         num_labels=args.num_labels,
         split=args.split,
         split_ratio=args.split_ratio,
+        embedding_attributions=args.embedding_attributions,
         load_pointing_game_examples_path=args.load_pointing_game_examples_path,
         save_pointing_game_examples_path=args.save_pointing_game_examples_path,
         num_segments=2,
@@ -74,6 +85,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_length', type=int, default=256, help='Maximum sequence length for tokenization')
     parser.add_argument('--num_examples', type=int, default=-1, help='Number of examples to process (-1 for all)')
     parser.add_argument('--methods', nargs='+', default=None, help='List of attribution methods to use')
+    parser.add_argument('--embedding_attributions', nargs='+', default=None, help='List of embeddings to attribute the prediction to')
     parser.add_argument('--output_dir', type=str, default='baseline_results/all_methods_1000_examples_256_pointing_game_results', help='Directory to save the output files')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     parser.add_argument('--shap_n_samples', type=int, default=25, help='Number of samples for Shapley Value Sampling')

@@ -572,11 +572,11 @@ class OcclusionExplainer(BaseExplainer):
                     'predicted_class_confidence': confidences[i][predicted_class],
                     'target_class': class_index,
                     'target_class_confidence': confidences[i][class_index],
-                    'method': 'occlusion',
+                    'method': 'Occlusion',
                     'attribution': list(zip(tokens, attributions_i.tolist()[:real_length])),
                 }
                 all_occlusion_results[i].append(result)
-        return {"occlusion": all_occlusion_results}
+        return {"Occlusion": all_occlusion_results}
     
     def explain(self, texts, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512):
         # if class_labels is not provided, then num_classes must be provided
@@ -617,8 +617,8 @@ class OcclusionExplainer(BaseExplainer):
             else:
                 batch_class_labels = None
             occlusion_result = self.explain(texts=texts, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length)
-            occlusion_results.extend(occlusion_result['occlusion'])
-        return {"occlusion": occlusion_results}
+            occlusion_results.extend(occlusion_result['Occlusion'])
+        return {"Occlusion": occlusion_results}
     
     def explain_hybrid_documents_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512):
         # if class_labels is not provided, then num_classes must be provided
@@ -638,8 +638,8 @@ class OcclusionExplainer(BaseExplainer):
             else:
                 batch_class_labels = None
             occlusion_result = self.explain_hybrid_documents(text1=texts1, text2=texts2, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length)
-            occlusion_results.extend(occlusion_result['occlusion'])
-        return {"occlusion": occlusion_results}
+            occlusion_results.extend(occlusion_result['Occlusion'])
+        return {"Occlusion": occlusion_results}
     
 class ShapleyValueExplainer(BaseExplainer):
     def __init__(self, model, tokenizer, n_samples=25):
@@ -702,11 +702,11 @@ class ShapleyValueExplainer(BaseExplainer):
                     'predicted_class_confidence': confidences[i][predicted_class],
                     'target_class': class_index,
                     'target_class_confidence': confidences[i][class_index],
-                    'method': 'shapley_value_sampling',
+                    'method': 'ShapleyValue',
                     'attribution': list(zip(tokens, attributions_i.tolist()[:real_length])),
                 }
                 all_shapley_results[i].append(result)
-        return {"shapley_value_sampling": all_shapley_results}
+        return {"ShapleyValue": all_shapley_results}
     
     def explain(self, texts, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512):
         # if class_labels is not provided, then num_classes must be provided
@@ -747,8 +747,8 @@ class ShapleyValueExplainer(BaseExplainer):
             else:
                 batch_class_labels = None
             shapley_result = self.explain(texts=texts, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length)
-            shapley_results.extend(shapley_result['shapley_value_sampling'])
-        return {"shapley_value_sampling": shapley_results}
+            shapley_results.extend(shapley_result['ShapleyValue'])
+        return {"ShapleyValue": shapley_results}
     
     def explain_hybrid_documents_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512):
         # if class_labels is not provided, then num_classes must be provided
@@ -768,8 +768,8 @@ class ShapleyValueExplainer(BaseExplainer):
             else:
                 batch_class_labels = None
             shapley_result = self.explain_hybrid_documents(text1=texts1, text2=texts2, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length)
-            shapley_results.extend(shapley_result['shapley_value_sampling'])
-        return {"shapley_value_sampling": shapley_results}
+            shapley_results.extend(shapley_result['ShapleyValue'])
+        return {"ShapleyValue": shapley_results}
 
 
 class LimeExplainer(BaseExplainer):
@@ -819,12 +819,13 @@ class LimeExplainer(BaseExplainer):
             'predicted_class_confidence': confidences[0][predicted_class],
             'target_class': explained_label,
             'target_class_confidence': confidences[0][explained_label],
-            'attributions': list(zip(explanation.features, explanation.feature_importance.tolist())),
+            'method': 'Lime',
+            'attribution': list(zip(explanation.features, explanation.feature_importance.tolist())),
         }
         lime_results.append(result)
-        return {"lime": [lime_results]}
+        return {"Lime": [lime_results]}
     
-    def explain_hybrid_documents(self, text1, text2, example_index, label=None, num_classes=None, class_labels=None, max_length=512):
+    def explain_hybrid_documents(self, text1, text2, example_index, label=None, num_classes=None, class_label=None, max_length=512):
         # single instance
         inputs = self.tokenizer(text1, text2, truncation=True, max_length=max_length, return_tensors='pt')
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
@@ -836,11 +837,11 @@ class LimeExplainer(BaseExplainer):
             predicted_class = outputs.logits.argmax(dim=-1).item()
             # confidence for each class
             confidences = torch.nn.functional.softmax(outputs.logits, dim=-1).cpu().numpy().tolist()
-        if class_labels is None:
+        if class_label is None:
             # explain for all classes
             all_explained_labels = list(range(num_classes))
         else:
-            all_explained_labels = class_labels
+            all_explained_labels = class_label
         lime_results = []
         def bert_tokenizer(text):
             return self.tokenizer.tokenize(text)[:max_length-2] # subtract 2 for [CLS] and [SEP]
@@ -858,12 +859,13 @@ class LimeExplainer(BaseExplainer):
                 'example_id': example_index[0],
                 'text': ' '.join(explanation.features),
                 #'tokens': explanation.features,
-                'true_label': label[0],
+                'true_label': None,
                 'predicted_class': predicted_class,
                 'predicted_class_confidence': confidences[0][predicted_class],
                 'target_class': explained_label,
                 'target_class_confidence': confidences[0][explained_label],
-                'attributions': list(zip(explanation.features, explanation.feature_importance.tolist())),
+                'method': 'Lime',
+                'attribution': list(zip(explanation.features, explanation.feature_importance.tolist())),
             }
             lime_results.append(result)
             if num_classes == 2:
@@ -876,11 +878,12 @@ class LimeExplainer(BaseExplainer):
                     'predicted_class_confidence': confidences[0][predicted_class],
                     'target_class': all_explained_labels[1],
                     'target_class_confidence': 1 - confidences[0][explained_label],
-                    'attributions': list(zip(explanation.features, [-x for x in explanation.feature_importance.tolist()])),
+                    'method': 'Lime',
+                    'attribution': list(zip(explanation.features, [-x for x in explanation.feature_importance.tolist()])),
                 }
                 lime_results.append(neg_result)
                 break
-        return {"lime": [lime_results]}
+        return {"Lime": [lime_results]}
         
 
     def explain_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512):
@@ -894,8 +897,8 @@ class LimeExplainer(BaseExplainer):
             batch_class_labels = [predicted_label[0] for predicted_label in batch_class_labels]
             class_labels_indexer += len(example_index)
             lime_result = self.explain(text=text, example_index=example_index, label=label, num_classes=num_classes, class_label=batch_class_labels, max_length=max_length)
-            lime_results.extend(lime_result['lime'])
-        return {"lime": lime_results}
+            lime_results.extend(lime_result['Lime'])
+        return {"Lime": lime_results}
     
     def explain_hybrid_documents_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512):
         lime_results = []
@@ -909,5 +912,5 @@ class LimeExplainer(BaseExplainer):
             batch_class_labels = [predicted_label[0] for predicted_label in batch_class_labels]
             class_labels_indexer += len(example_index)
             lime_result = self.explain_hybrid_documents(text1=text1, text2=text2, example_index=example_index, label=label, num_classes=num_classes, class_label=batch_class_labels, max_length=max_length)
-            lime_results.extend(lime_result['lime'])
-        return {"lime": lime_results}
+            lime_results.extend(lime_result['Lime'])
+        return {"Lime": lime_results}

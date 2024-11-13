@@ -96,7 +96,7 @@ def main(args):
                 #orig_probs = torch.tensor([x['predicted_class_confidence'] for x in batch]).to(device)
                 
                 #target_classes = torch.tensor([x['target_class'] for x in batch]).to(device)
-                if is_embedding_attribution(method) and args.embedding_attributions is not None:
+                if is_embedding_attribution(method) and args.embedding_attributions is not None and len(args.embedding_attributions) > 0:
                     # attribution as sum over specified embeddings
                     attributions = [[x[1] for x in attr] for attr in [[x[f"attribution_{embedding}"] for embedding in args.embedding_attributions] for x in batch]]
                     # sum over embeddings for each entry in the list
@@ -123,7 +123,7 @@ def main(args):
             perturbation_results[method]["comprehensiveness_auc"] = comprehensiveness_auc
             perturbation_results[method]["sufficiency_auc"] = sufficiency_auc
 
-        output_path = explanation_path.replace('results.json', 'perturbation_results.json')
+        output_path = explanation_path.replace('explanations.json', 'perturbation_results.json')
         with open(output_path, 'w') as f:
             json.dump(perturbation_results, f, indent=4)
         print(f"Results saved to {output_path}")
@@ -138,7 +138,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_length', type=int, default=512, help='Maximum sequence length for tokenization')
     parser.add_argument('--num_examples', type=int, default=-1, help='Number of examples to process (-1 for all)')
     #parser.add_argument('--methods', type=str, default='', help='Comma-separated list of attribution methods to use')
-    parser.add_argument('--embedding_attributions', nargs='+', default=['token', 'position', 'token_type'], help='List of embeddings to attribute the prediction to')
+    parser.add_argument('--embedding_attributions', nargs='+', default=[], help='List of embeddings to attribute the prediction to')
     parser.add_argument('--mask_type', type=str, default='mask', help='Type of token to mask for perturbation')
     parser.add_argument('--percentages', type=str, default='0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0', help='Comma-separated list of percentages for selecting rationales')
     #parser.add_argument('--output_path', type=str, default='baseline_saliency_results/all_methods_1000_examples_512/Attention_perturbation_results.json', help='Directory to save the output files')

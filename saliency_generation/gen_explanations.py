@@ -12,15 +12,15 @@ import random
 from tqdm import tqdm
 
 EXPLANATION_METHODS = {
-    #"Attention": AttentionExplainer,
+    "Attention": AttentionExplainer,
     "Saliency": GradientNPropabationExplainer,
     "DeepLift": GradientNPropabationExplainer,
     "GuidedBackprop": GradientNPropabationExplainer,
     "InputXGradient": GradientNPropabationExplainer,
     "IntegratedGradients": GradientNPropabationExplainer,
-    #"Occlusion": OcclusionExplainer,
-    #"ShapleyValue": ShapleyValueExplainer,
-    #"Lime": LimeExplainer,
+    "Occlusion": OcclusionExplainer,
+    "ShapleyValue": ShapleyValueExplainer,
+    "Lime": LimeExplainer,
 }
 
 
@@ -75,7 +75,7 @@ def main(args):
         result = explanation_results
 
         # Save the results to a JSON file
-        output_file = os.path.join(args.output_dir, f'{method}_results.json')
+        output_file = os.path.join(args.output_dir, f'{method}_explanations.json')
         with open(output_file, 'w') as f:
             json.dump(result, f, indent=4)
         print(f"\nAttribution results saved to {output_file}")
