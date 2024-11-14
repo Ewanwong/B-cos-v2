@@ -25,6 +25,16 @@ EXPLANATION_METHODS = {
 
 
 def main(args):
+
+    # convert strings to numbers
+    args.num_labels = int(args.num_labels) if args.num_labels else None
+    args.batch_size = int(args.batch_size) if args.batch_size else None
+    args.max_length = int(args.max_length) if args.max_length else None
+    args.num_examples = int(args.num_examples) if args.num_examples else None
+    args.seed = int(args.seed) if args.seed else None
+    args.shap_n_samples = int(args.shap_n_samples) if args.shap_n_samples else None
+
+
     # Set random seed for reproducibility
     set_random_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -60,7 +70,7 @@ def main(args):
     for method in attribution_methods:
         print(f"\nRunning {method} explainer...")
         if method == "ShapleyValue":
-            explainer = ShapleyValueExplainer(model, tokenizer, args.n_samples)
+            explainer = ShapleyValueExplainer(model, tokenizer, args.shap_n_samples)
         # for GradientNPropabationExplainer, we need to specify the method
         elif EXPLANATION_METHODS[method] == GradientNPropabationExplainer:
             explainer = EXPLANATION_METHODS[method](model, tokenizer, method)
@@ -70,8 +80,8 @@ def main(args):
         # can only explain the label class to reduce the computation time
         #class_labels = [dataset['label']]
         #explanation_results = explainer.explain_dataset(dataset, num_classes=args.num_labels, class_labels=class_labels, batch_size=args.batch_size, max_length=args.max_length)
-        
-        explanation_results = explainer.explain_dataset(dataset, num_classes=args.num_labels, batch_size=args.batch_size, max_length=args.max_length)
+
+        explanation_results = explainer.explain_dataset(dataset, num_classes=args.num_labels, batch_size=args.batch_size, max_length=args.max_length, only_predicted_classes=args.only_predicted_classes)
         result = explanation_results
 
         # Save the results to a JSON file
@@ -95,7 +105,8 @@ if __name__ == "__main__":
     parser.add_argument('--methods', nargs='+', default=None, help='List of attribution methods to use')
     parser.add_argument('--output_dir', type=str, default='baseline_saliency_results/all_methods_1000_examples_512', help='Directory to save the output files')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
-    parser.add_argument('--n_samples', type=int, default=25, help='Number of samples for Shapley Value Sampling')
+    parser.add_argument('--shap_n_samples', type=int, default=25, help='Number of samples for Shapley Value Sampling')
+    parser.add_argument('--only_predicted_classes', action='store_true', help='Only explain the predicted class')
 
     args = parser.parse_args()
     main(args)

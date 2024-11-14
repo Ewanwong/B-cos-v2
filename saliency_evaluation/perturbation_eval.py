@@ -22,6 +22,14 @@ def is_embedding_attribution(method):
 
 def main(args):
 
+    # convert strings to numbers
+    args.num_labels = int(args.num_labels) if args.num_labels else None
+    args.batch_size = int(args.batch_size) if args.batch_size else None
+    args.max_length = int(args.max_length) if args.max_length else None
+    args.num_examples = int(args.num_examples) if args.num_examples else None
+    args.seed = int(args.seed) if args.seed else None
+    args.embedding_attributions = args.embedding_attributions if args.embedding_attributions != 'None' else None
+
     # Set random seed for reproducibility
     def set_random_seed(seed):
         random.seed(seed)

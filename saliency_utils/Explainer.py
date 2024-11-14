@@ -34,7 +34,7 @@ class BertEmbeddingModelWrapper(torch.nn.Module):
         )
         sequence_output = encoder_outputs[0]
         pooled_output = self.model.bert.pooler(sequence_output) if self.model.bert.pooler is not None else None
-        pooled_ouput = self.model.dropout(pooled_output)
+        pooled_output = self.model.dropout(pooled_output)
         logits = self.model.classifier(pooled_output)
         return logits
 
@@ -94,7 +94,7 @@ class AttentionExplainer(BaseExplainer):
         self.tokenizer = tokenizer
         self.device = model.device
 
-    def _explain(self, input_ids, attention_mask, example_indices=None, labels=None, num_classes=None, class_labels=None):
+    def _explain(self, input_ids, attention_mask, example_indices=None, labels=None, num_classes=None, class_labels=None, only_predicted_classes=False):
 
         with torch.no_grad():
             outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
@@ -185,6 +185,8 @@ class AttentionExplainer(BaseExplainer):
                 class_indices = [predicted_class]
             if class_labels is not None:
                 class_indices = [class_label[i] for class_label in class_labels]
+            if only_predicted_classes:
+                class_indices = [predicted_class]
             for class_idx in class_indices:
             # skip all padding tokens
                 raw_attention_result = {
@@ -233,25 +235,25 @@ class AttentionExplainer(BaseExplainer):
         attention_explanations = {"raw_attention": all_raw_attention_explanations, "attention_rollout": all_attention_rollout_explanations, "attention_flow": all_attention_flow_explanations}
         return attention_explanations
         
-    def explain(self, texts, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512):
+    def explain(self, texts, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512, only_predicted_classes=False):
 
         inputs = self.tokenizer(texts, return_tensors='pt', padding=True, truncation=True, max_length=max_length)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
         input_ids = inputs['input_ids']
         attention_mask = inputs['attention_mask']
-        attention_explanations = self._explain(input_ids=input_ids, attention_mask=attention_mask, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels)
+        attention_explanations = self._explain(input_ids=input_ids, attention_mask=attention_mask, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels, only_predicted_classes=only_predicted_classes)
         return attention_explanations
     
-    def explain_hybrid_documents(self, text1, text2, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512):
+    def explain_hybrid_documents(self, text1, text2, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512, only_predicted_classes=False):
 
         inputs = self.tokenizer(text1, text2, return_tensors='pt', padding=True, truncation=True, max_length=max_length)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
         input_ids = inputs['input_ids']
         attention_mask = inputs['attention_mask']
-        attention_explanations = self._explain(input_ids=input_ids, attention_mask=attention_mask, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels)
+        attention_explanations = self._explain(input_ids=input_ids, attention_mask=attention_mask, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels, only_predicted_classes=only_predicted_classes)
         return attention_explanations
     
-    def explain_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512):
+    def explain_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512, only_predicted_classes=False):
         # classes_labels: [[class1 for ex1, class1 for ex2...], [class2 for ex1, class2 for ex2...]]
         if num_classes is not None or class_labels is not None:
             print("Attention explainer can only explain the predicted classes")
@@ -269,14 +271,14 @@ class AttentionExplainer(BaseExplainer):
                 class_labels_indexer += len(example_indices)
             else:
                 batch_class_labels = None
-            attention_explanation = self.explain(texts=texts, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length)
+            attention_explanation = self.explain(texts=texts, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length, only_predicted_classes=only_predicted_classes)
             raw_attention_explanations.extend(attention_explanation['raw_attention'])
             attention_rollout_explanations.extend(attention_explanation['attention_rollout'])
             attention_flow_explanations.extend(attention_explanation['attention_flow'])
         attention_explanations = {"raw_attention": raw_attention_explanations, "attention_rollout": attention_rollout_explanations, "attention_flow": attention_flow_explanations}
         return attention_explanations
     
-    def explain_hybrid_documents_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512):
+    def explain_hybrid_documents_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512, only_predicted_classes=False):
 
         data_loader = batch_loader(dataset, batch_size=batch_size, shuffle=False)
         raw_attention_explanations = []
@@ -293,7 +295,7 @@ class AttentionExplainer(BaseExplainer):
                 class_labels_indexer += len(example_indices)
             else:
                 batch_class_labels = None
-            attention_explanation = self.explain_hybrid_documents(text1=texts1, text2=texts2, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length)
+            attention_explanation = self.explain_hybrid_documents(text1=texts1, text2=texts2, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length, only_predicted_classes=only_predicted_classes)
             raw_attention_explanations.extend(attention_explanation['raw_attention'])
             attention_rollout_explanations.extend(attention_explanation['attention_rollout'])
             attention_flow_explanations.extend(attention_explanation['attention_flow'])
@@ -321,7 +323,7 @@ class GradientNPropabationExplainer(BaseExplainer):
             raise ValueError(f"Invalid method {method}")
         self.device = model.device
 
-    def _explain(self, input_ids, attention_mask, position_ids=None, token_type_ids=None, example_indices=None, labels=None, num_classes=None, class_labels=None):
+    def _explain(self, input_ids, attention_mask, position_ids=None, token_type_ids=None, example_indices=None, labels=None, num_classes=None, class_labels=None, only_predicted_classes=False):
 
         if position_ids is None:
             position_ids = torch.arange(input_ids.size(1), dtype=torch.long, device=self.device).unsqueeze(0).repeat(input_ids.size(0), 1)
@@ -350,7 +352,7 @@ class GradientNPropabationExplainer(BaseExplainer):
 
         input_ids_cpu = input_ids.detach().cpu().numpy().tolist()
         all_explained_labels = []
-        if class_labels is None:            
+        if class_labels is None and num_classes is not None:           
             # explain for all classes
             for class_idx in range(num_classes):
                 class_labels = [class_idx] * batch_size
@@ -358,14 +360,25 @@ class GradientNPropabationExplainer(BaseExplainer):
         else:
             all_explained_labels=class_labels
         
+        if only_predicted_classes:
+            all_explained_labels = [predicted_classes]
+
         all_saliency_l2_results = [[] for _ in range(batch_size)]
         all_saliency_mean_results = [[] for _ in range(batch_size)]
         for explained_labels in all_explained_labels:
-            attributions = self.explainer.attribute(
-                inputs=(token_embeddings, position_embeddings, token_type_embeddings),
-                target=explained_labels,
-                additional_forward_args=(attention_mask,)
-            )
+            if self.method == 'Saliency':
+                attributions = self.explainer.attribute(
+                    inputs=(token_embeddings, position_embeddings, token_type_embeddings),
+                    target=explained_labels,
+                    additional_forward_args=(attention_mask,),
+                    abs=False,
+                )
+            else:
+                attributions = self.explainer.attribute(
+                    inputs=(token_embeddings, position_embeddings, token_type_embeddings),
+                    target=explained_labels,
+                    additional_forward_args=(attention_mask,)
+                )
             attributions_token, attributions_position, attributions_token_type = attributions
 
 
@@ -426,10 +439,10 @@ class GradientNPropabationExplainer(BaseExplainer):
         saliency_results = {f"{self.method}_L2": all_saliency_l2_results, f"{self.method}_mean": all_saliency_mean_results}
         return saliency_results
     
-    def explain(self, texts, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512):
+    def explain(self, texts, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512, only_predicted_classes=False):
         # if class_labels is not provided, then num_classes must be provided
         if class_labels is None:
-            assert num_classes is not None, "Num_classes must be provided for explainer if class_labels is not provided"
+            assert num_classes is not None or only_predicted_classes, "Num_classes must be provided for explainer if class_labels is not provided"
         inputs = self.tokenizer(texts, return_tensors='pt', padding=True, truncation=True, max_length=max_length)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
         input_ids = inputs['input_ids']
@@ -440,13 +453,13 @@ class GradientNPropabationExplainer(BaseExplainer):
             token_type_ids = inputs['token_type_ids']
         else:
             token_type_ids = torch.zeros_like(input_ids)
-        saliency_results = self._explain(input_ids=input_ids, attention_mask=attention_mask, position_ids=position_ids, token_type_ids=token_type_ids, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels)
+        saliency_results = self._explain(input_ids=input_ids, attention_mask=attention_mask, position_ids=position_ids, token_type_ids=token_type_ids, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels, only_predicted_classes=only_predicted_classes)
         return saliency_results
     
-    def explain_hybrid_documents(self, text1, text2, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512):
+    def explain_hybrid_documents(self, text1, text2, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512, only_predicted_classes=False):
         # if class_labels is not provided, then num_classes must be provided
         if class_labels is None:
-            assert num_classes is not None, "Num_classes must be provided for explainer if class_labels is not provided"
+            assert num_classes is not None or only_predicted_classes, "Num_classes must be provided for explainer if class_labels is not provided"
         inputs = self.tokenizer(text1, text2, return_tensors='pt', padding=True, truncation=True, max_length=max_length)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
         input_ids = inputs['input_ids']
@@ -458,13 +471,13 @@ class GradientNPropabationExplainer(BaseExplainer):
         else:
             token_type_ids = torch.zeros_like(input_ids)
             token_type_ids[:, input_ids.tolist().index(self.tokenizer.sep_token_id)] = 1
-        saliency_results = self._explain(input_ids=input_ids, attention_mask=attention_mask, position_ids=position_ids, token_type_ids=token_type_ids, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels)
+        saliency_results = self._explain(input_ids=input_ids, attention_mask=attention_mask, position_ids=position_ids, token_type_ids=token_type_ids, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels, only_predicted_classes=only_predicted_classes)
         return saliency_results
     
-    def explain_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512):
+    def explain_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512, only_predicted_classes=False):
         # if class_labels is not provided, then num_classes must be provided
         if class_labels is None:
-            assert num_classes is not None, "Num_classes must be provided for explainer if class_labels is not provided"
+            assert num_classes is not None or only_predicted_classes, "Num_classes must be provided for explainer if class_labels is not provided"
         data_loader = batch_loader(dataset, batch_size=batch_size, shuffle=False)
         saliency_l2_results = []
         saliency_mean_results = []
@@ -478,16 +491,16 @@ class GradientNPropabationExplainer(BaseExplainer):
                 class_labels_indexer += len(example_indices)
             else:
                 batch_class_labels = None
-            saliency_results = self.explain(texts=texts, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length)
+            saliency_results = self.explain(texts=texts, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length, only_predicted_classes=only_predicted_classes)
             saliency_l2_results.extend(saliency_results[f"{self.method}_L2"])
             saliency_mean_results.extend(saliency_results[f"{self.method}_mean"])
         saliency_results = {f"{self.method}_L2": saliency_l2_results, f"{self.method}_mean": saliency_mean_results}
         return saliency_results
     
-    def explain_hybrid_documents_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512):
+    def explain_hybrid_documents_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512, only_predicted_classes=False):
         # if class_labels is not provided, then num_classes must be provided
         if class_labels is None:
-            assert num_classes is not None, "Num_classes must be provided for explainer if class_labels is not provided"
+            assert num_classes is not None or only_predicted_classes, "Num_classes must be provided for explainer if class_labels is not provided"
         data_loader = batch_loader(dataset, batch_size=batch_size, shuffle=False)
         saliency_l2_results = []
         saliency_mean_results = []
@@ -502,7 +515,7 @@ class GradientNPropabationExplainer(BaseExplainer):
                 class_labels_indexer += len(example_indices)
             else:
                 batch_class_labels = None
-            saliency_results = self.explain_hybrid_documents(text1=texts1, text2=texts2, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length)
+            saliency_results = self.explain_hybrid_documents(text1=texts1, text2=texts2, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length, only_predicted_classes=only_predicted_classes)
             saliency_l2_results.extend(saliency_results[f"{self.method}_L2"])
             saliency_mean_results.extend(saliency_results[f"{self.method}_mean"])
         saliency_results = {f"{self.method}_L2": saliency_l2_results, f"{self.method}_mean": saliency_mean_results}
@@ -521,7 +534,7 @@ class OcclusionExplainer(BaseExplainer):
         self.stride = (1,)
         self.device = model.device
 
-    def _explain(self, input_ids, attention_mask, example_indices, labels=None, num_classes=None, class_labels=None):
+    def _explain(self, input_ids, attention_mask, example_indices, labels=None, num_classes=None, class_labels=None, only_predicted_classes=False):
 
         batch_size = input_ids.shape[0]
         # Get the model's predictions
@@ -532,13 +545,16 @@ class OcclusionExplainer(BaseExplainer):
         confidences = torch.nn.functional.softmax(outputs, dim=-1).detach().cpu().numpy().tolist()
 
         all_explained_labels = []
-        if class_labels is None:
+        if class_labels is None and num_classes is not None:
             # explain for all classes
             for class_idx in range(num_classes):
                 class_labels = [class_idx] * batch_size
                 all_explained_labels.append(class_labels)
         else:
             all_explained_labels=class_labels
+        
+        if only_predicted_classes:
+            all_explained_labels = [predicted_classes]
 
         all_occlusion_results = [[] for _ in range(batch_size)]
         for explained_labels in all_explained_labels:
@@ -578,32 +594,32 @@ class OcclusionExplainer(BaseExplainer):
                 all_occlusion_results[i].append(result)
         return {"Occlusion": all_occlusion_results}
     
-    def explain(self, texts, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512):
+    def explain(self, texts, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512, only_predicted_classes=False):
         # if class_labels is not provided, then num_classes must be provided
         if class_labels is None:
-            assert num_classes is not None, "Num_classes must be provided for explainer if class_labels is not provided"
+            assert num_classes is not None or only_predicted_classes, "Num_classes must be provided for explainer if class_labels is not provided"
         inputs = self.tokenizer(texts, return_tensors='pt', padding=True, truncation=True, max_length=max_length)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
         input_ids = inputs['input_ids']
         attention_mask = inputs['attention_mask']
-        occlusion_results = self._explain(input_ids=input_ids, attention_mask=attention_mask, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels)
+        occlusion_results = self._explain(input_ids=input_ids, attention_mask=attention_mask, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels, only_predicted_classes=only_predicted_classes)
         return occlusion_results
     
-    def explain_hybrid_documents(self, text1, text2, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512):
+    def explain_hybrid_documents(self, text1, text2, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512, only_predicted_classes=False):
         # if class_labels is not provided, then num_classes must be provided
         if class_labels is None:
-            assert num_classes is not None, "Num_classes must be provided for explainer if class_labels is not provided"
+            assert num_classes is not None or only_predicted_classes, "Num_classes must be provided for explainer if class_labels is not provided"
         inputs = self.tokenizer(text1, text2, return_tensors='pt', padding=True, truncation=True, max_length=max_length)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
         input_ids = inputs['input_ids']
         attention_mask = inputs['attention_mask']
-        occlusion_results = self._explain(input_ids=input_ids, attention_mask=attention_mask, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels)
+        occlusion_results = self._explain(input_ids=input_ids, attention_mask=attention_mask, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels, only_predicted_classes=only_predicted_classes)
         return occlusion_results
     
-    def explain_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512):
+    def explain_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512, only_predicted_classes=False):
         # if class_labels is not provided, then num_classes must be provided
         if class_labels is None:
-            assert num_classes is not None, "Num_classes must be provided for explainer if class_labels is not provided"
+            assert num_classes is not None or only_predicted_classes, "Num_classes must be provided for explainer if class_labels is not provided"
         data_loader = batch_loader(dataset, batch_size=batch_size, shuffle=False)
         occlusion_results = []
         class_labels_indexer = 0
@@ -616,14 +632,14 @@ class OcclusionExplainer(BaseExplainer):
                 class_labels_indexer += len(example_indices)
             else:
                 batch_class_labels = None
-            occlusion_result = self.explain(texts=texts, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length)
+            occlusion_result = self.explain(texts=texts, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length, only_predicted_classes=only_predicted_classes)
             occlusion_results.extend(occlusion_result['Occlusion'])
         return {"Occlusion": occlusion_results}
     
-    def explain_hybrid_documents_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512):
+    def explain_hybrid_documents_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512, only_predicted_classes=False):
         # if class_labels is not provided, then num_classes must be provided
         if class_labels is None:
-            assert num_classes is not None, "Num_classes must be provided for explainer if class_labels is not provided"
+            assert num_classes is not None or only_predicted_classes, "Num_classes must be provided for explainer if class_labels is not provided"
         data_loader = batch_loader(dataset, batch_size=batch_size, shuffle=False)
         occlusion_results = []
         class_labels_indexer = 0
@@ -637,7 +653,7 @@ class OcclusionExplainer(BaseExplainer):
                 class_labels_indexer += len(example_indices)
             else:
                 batch_class_labels = None
-            occlusion_result = self.explain_hybrid_documents(text1=texts1, text2=texts2, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length)
+            occlusion_result = self.explain_hybrid_documents(text1=texts1, text2=texts2, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length, only_predicted_classes=only_predicted_classes)
             occlusion_results.extend(occlusion_result['Occlusion'])
         return {"Occlusion": occlusion_results}
     
@@ -651,7 +667,7 @@ class ShapleyValueExplainer(BaseExplainer):
         self.explainer = ShapleyValueSampling(self.model)
         self.device = model.device
 
-    def _explain(self, input_ids, attention_mask, example_indices, labels=None, num_classes=None, class_labels=None):
+    def _explain(self, input_ids, attention_mask, example_indices, labels=None, num_classes=None, class_labels=None, only_predicted_classes=False):
 
         batch_size = input_ids.shape[0]
         # Get the model's predictions
@@ -662,13 +678,16 @@ class ShapleyValueExplainer(BaseExplainer):
         confidences = torch.nn.functional.softmax(outputs, dim=-1).detach().cpu().numpy().tolist()
 
         all_explained_labels = []
-        if class_labels is None:
+        if class_labels is None and num_classes is not None:
             # explain for all classes
             for class_idx in range(num_classes):
                 class_labels = [class_idx] * batch_size
                 all_explained_labels.append(class_labels)
         else:
             all_explained_labels=class_labels
+        
+        if only_predicted_classes:
+            all_explained_labels = [predicted_classes]
 
         all_shapley_results = [[] for _ in range(batch_size)]
         for explained_labels in all_explained_labels:
@@ -708,32 +727,32 @@ class ShapleyValueExplainer(BaseExplainer):
                 all_shapley_results[i].append(result)
         return {"ShapleyValue": all_shapley_results}
     
-    def explain(self, texts, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512):
+    def explain(self, texts, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512, only_predicted_classes=False):
         # if class_labels is not provided, then num_classes must be provided
         if class_labels is None:
-            assert num_classes is not None, "Num_classes must be provided for explainer if class_labels is not provided"
+            assert num_classes is not None or only_predicted_classes, "Num_classes must be provided for explainer if class_labels is not provided"
         inputs = self.tokenizer(texts, return_tensors='pt', padding=True, truncation=True, max_length=max_length)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
         input_ids = inputs['input_ids']
         attention_mask = inputs['attention_mask']
-        shapley_results = self._explain(input_ids=input_ids, attention_mask=attention_mask, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels)
+        shapley_results = self._explain(input_ids=input_ids, attention_mask=attention_mask, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels, only_predicted_classes=only_predicted_classes)
         return shapley_results
     
-    def explain_hybrid_documents(self, text1, text2, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512):
+    def explain_hybrid_documents(self, text1, text2, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512, only_predicted_classes=False):
         # if class_labels is not provided, then num_classes must be provided
         if class_labels is None:
-            assert num_classes is not None, "Num_classes must be provided for explainer if class_labels is not provided"
+            assert num_classes is not None or only_predicted_classes, "Num_classes must be provided for explainer if class_labels is not provided"
         inputs = self.tokenizer(text1, text2, return_tensors='pt', padding=True, truncation=True, max_length=max_length)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
         input_ids = inputs['input_ids']
         attention_mask = inputs['attention_mask']
-        shapley_results = self._explain(input_ids=input_ids, attention_mask=attention_mask, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels)
+        shapley_results = self._explain(input_ids=input_ids, attention_mask=attention_mask, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels, only_predicted_classes=only_predicted_classes)
         return shapley_results
     
-    def explain_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512):
+    def explain_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512, only_predicted_classes=False):
         # if class_labels is not provided, then num_classes must be provided
         if class_labels is None:
-            assert num_classes is not None, "Num_classes must be provided for explainer if class_labels is not provided"
+            assert num_classes is not None or only_predicted_classes, "Num_classes must be provided for explainer if class_labels is not provided"
         data_loader = batch_loader(dataset, batch_size=1, shuffle=False) # batch_size = 1 to avoid padding
         shapley_results = []
         class_labels_indexer = 0
@@ -746,14 +765,14 @@ class ShapleyValueExplainer(BaseExplainer):
                 class_labels_indexer += len(example_indices)
             else:
                 batch_class_labels = None
-            shapley_result = self.explain(texts=texts, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length)
+            shapley_result = self.explain(texts=texts, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length, only_predicted_classes=only_predicted_classes)
             shapley_results.extend(shapley_result['ShapleyValue'])
         return {"ShapleyValue": shapley_results}
     
-    def explain_hybrid_documents_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512):
+    def explain_hybrid_documents_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512, only_predicted_classes=False):
         # if class_labels is not provided, then num_classes must be provided
         if class_labels is None:
-            assert num_classes is not None, "Num_classes must be provided for explainer if class_labels is not provided"
+            assert num_classes is not None or only_predicted_classes, "Num_classes must be provided for explainer if class_labels is not provided"
         data_loader = batch_loader(dataset, batch_size=1, shuffle=False)
         shapley_results = []
         class_labels_indexer = 0
@@ -767,7 +786,7 @@ class ShapleyValueExplainer(BaseExplainer):
                 class_labels_indexer += len(example_indices)
             else:
                 batch_class_labels = None
-            shapley_result = self.explain_hybrid_documents(text1=texts1, text2=texts2, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length)
+            shapley_result = self.explain_hybrid_documents(text1=texts1, text2=texts2, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=batch_class_labels, max_length=max_length, only_predicted_classes=only_predicted_classes)
             shapley_results.extend(shapley_result['ShapleyValue'])
         return {"ShapleyValue": shapley_results}
 
@@ -782,7 +801,7 @@ class LimeExplainer(BaseExplainer):
         self.prob_func = BertProbabilityModelWrapper(self.model, self.tokenizer, batch_size=batch_size)
         self.device = model.device
                
-    def explain(self, text, example_index, label=None, num_classes=None, class_label=None, max_length=512):
+    def explain(self, text, example_index, label=None, num_classes=None, class_label=None, max_length=512, only_predicted_classes=False):
         # single instance
         inputs = self.tokenizer(text, truncation=True, max_length=max_length, return_tensors='pt')
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
@@ -798,7 +817,11 @@ class LimeExplainer(BaseExplainer):
             # explain for all classes
             all_explained_labels = list(range(num_classes))
         else:
-            all_explained_labels = [class_label]
+            all_explained_labels = class_label
+
+        if only_predicted_classes:
+            all_explained_labels = [predicted_class]
+
         lime_results = []
         def bert_tokenizer(text):
             return self.tokenizer.tokenize(text)[:max_length-2] # subtract 2 for [CLS] and [SEP]
@@ -812,7 +835,7 @@ class LimeExplainer(BaseExplainer):
             )
         result = {
             'example_id': example_index,
-            'text': ' '.join(explanation.features),
+            'text': self.tokenizer.decode(input_ids[0], skip_special_tokens=True),
             #'tokens': explanation.features,
             'true_label': label,
             'predicted_class': predicted_class,
@@ -825,7 +848,7 @@ class LimeExplainer(BaseExplainer):
         lime_results.append(result)
         return {"Lime": [lime_results]}
     
-    def explain_hybrid_documents(self, text1, text2, example_index, label=None, num_classes=None, class_label=None, max_length=512):
+    def explain_hybrid_documents(self, text1, text2, example_index, label=None, num_classes=None, class_label=None, max_length=512, only_predicted_classes=False):
         # single instance
         inputs = self.tokenizer(text1, text2, truncation=True, max_length=max_length, return_tensors='pt')
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
@@ -842,6 +865,10 @@ class LimeExplainer(BaseExplainer):
             all_explained_labels = list(range(num_classes))
         else:
             all_explained_labels = class_label
+
+        if only_predicted_classes:
+            all_explained_labels = [predicted_class]
+
         lime_results = []
         def bert_tokenizer(text):
             return self.tokenizer.tokenize(text)[:max_length-2] # subtract 2 for [CLS] and [SEP]
@@ -857,7 +884,7 @@ class LimeExplainer(BaseExplainer):
             )
             result = {
                 'example_id': example_index[0],
-                'text': ' '.join(explanation.features),
+                'text': self.tokenizer.decode(input_ids[0], skip_special_tokens=True),
                 #'tokens': explanation.features,
                 'true_label': None,
                 'predicted_class': predicted_class,
@@ -886,21 +913,24 @@ class LimeExplainer(BaseExplainer):
         return {"Lime": [lime_results]}
         
 
-    def explain_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512):
+    def explain_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512, only_predicted_classes=False):
         lime_results = []
         class_labels_indexer = 0
         for example in tqdm(batch_loader(dataset, batch_size=1, shuffle=False)): # batch operation is not supported now
             example_index = example['index']
             text = example['text']
             label = example['label']
-            batch_class_labels = [predicted_label[class_labels_indexer: class_labels_indexer+len(example_index)] for predicted_label in class_labels]
-            batch_class_labels = [predicted_label[0] for predicted_label in batch_class_labels]
-            class_labels_indexer += len(example_index)
-            lime_result = self.explain(text=text, example_index=example_index, label=label, num_classes=num_classes, class_label=batch_class_labels, max_length=max_length)
+            if class_labels is not None:
+                batch_class_labels = [predicted_label[class_labels_indexer: class_labels_indexer+len(example_index)] for predicted_label in class_labels]
+                batch_class_labels = [predicted_label[0] for predicted_label in batch_class_labels]
+                class_labels_indexer += len(example_index)
+            else:
+                batch_class_labels = None
+            lime_result = self.explain(text=text, example_index=example_index, label=label, num_classes=num_classes, class_label=batch_class_labels, max_length=max_length, only_predicted_classes=only_predicted_classes)
             lime_results.extend(lime_result['Lime'])
         return {"Lime": lime_results}
     
-    def explain_hybrid_documents_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512):
+    def explain_hybrid_documents_dataset(self, dataset, num_classes=None, class_labels=None, batch_size=16, max_length=512, only_predicted_classes=False):
         lime_results = []
         class_labels_indexer = 0
         for example in tqdm(batch_loader(dataset, batch_size=1, shuffle=False)):
@@ -908,9 +938,12 @@ class LimeExplainer(BaseExplainer):
             text1 = example['text1']
             text2 = example['text2']
             label = None
-            batch_class_labels = [predicted_label[class_labels_indexer: class_labels_indexer+len(example_index)] for predicted_label in class_labels]
-            batch_class_labels = [predicted_label[0] for predicted_label in batch_class_labels]
-            class_labels_indexer += len(example_index)
-            lime_result = self.explain_hybrid_documents(text1=text1, text2=text2, example_index=example_index, label=label, num_classes=num_classes, class_label=batch_class_labels, max_length=max_length)
+            if class_labels is not None:
+                batch_class_labels = [predicted_label[class_labels_indexer: class_labels_indexer+len(example_index)] for predicted_label in class_labels]
+                batch_class_labels = [predicted_label[0] for predicted_label in batch_class_labels]
+                class_labels_indexer += len(example_index)
+            else:
+                batch_class_labels = None
+            lime_result = self.explain_hybrid_documents(text1=text1, text2=text2, example_index=example_index, label=label, num_classes=num_classes, class_label=batch_class_labels, max_length=max_length, only_predicted_classes=only_predicted_classes)
             lime_results.extend(lime_result['Lime'])
         return {"Lime": lime_results}

@@ -35,6 +35,7 @@ def select_rationales(attribution_scores, input_ids, attention_mask, percentage)
     # For each example in the batch, select top-k tokens
     for i in range(batch_size):
         topk = k if isinstance(k, int) else k[i]
+        #print(real_length[i], len(attribution_scores[i]))
         if real_length[i] == len(attribution_scores[i]):
             # select the top k tokens from the list of attribution scores
             # if the length of the attribution score is the same as the input length, that means the attribution score does not contain [CLS] and [SEP] tokens

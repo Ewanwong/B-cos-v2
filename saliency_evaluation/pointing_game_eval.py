@@ -7,14 +7,14 @@ from transformers import BertTokenizer, BertForSequenceClassification
 import os
 
 EXPLANATION_METHODS = {
-    #"Attention": AttentionExplainer,
-    #"Saliency": GradientNPropabationExplainer,
-    #"DeepLift": GradientNPropabationExplainer,
-    #"GuidedBackprop": GradientNPropabationExplainer,
-    #"InputXGradient": GradientNPropabationExplainer,
-    #"IntegratedGradients": GradientNPropabationExplainer,
-    #"Occlusion": OcclusionExplainer,
-    #"ShapleyValue": ShapleyValueExplainer,
+    "Attention": AttentionExplainer,
+    "Saliency": GradientNPropabationExplainer,
+    "DeepLift": GradientNPropabationExplainer,
+    "GuidedBackprop": GradientNPropabationExplainer,
+    "InputXGradient": GradientNPropabationExplainer,
+    "IntegratedGradients": GradientNPropabationExplainer,
+    "Occlusion": OcclusionExplainer,
+    "ShapleyValue": ShapleyValueExplainer,
     "Lime": LimeExplainer,
 }
 
