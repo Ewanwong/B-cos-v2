@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
-from transformers import BertTokenizer, BertForSequenceClassification
-#from bcos_lm.models.bert import BertForSequenceClassification
+from transformers import BertTokenizer, BertForSequenceClassification, AutoConfig
+from bcos_lm.models.modeling_bert import BertForSequenceClassification
 from saliency_utils.perturbation_utils import select_rationales, compute_comprehensiveness, compute_sufficiency, compute_perturbation_auc
 from argparse import ArgumentParser
 import json
@@ -48,7 +48,8 @@ def main(args):
 
     # Load tokenizer and model
     tokenizer = BertTokenizer.from_pretrained(args.model_dir)
-    model = BertForSequenceClassification.from_pretrained(args.model_dir).to(device)
+    config = AutoConfig.from_pretrained(args.model_dir)
+    model = BertForSequenceClassification.load_from_pretrained(args.model_dir, config=config).to(device)
     model.eval()
     if args.mask_type == "mask":
         mask_token_id = tokenizer.mask_token_id

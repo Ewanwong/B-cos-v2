@@ -2,27 +2,17 @@ import torch
 from torch.utils.data import Subset
 import numpy as np
 from datasets import load_dataset
-from transformers import BertForSequenceClassification, BertTokenizer
+from transformers import BertForSequenceClassification, BertTokenizer, AutoConfig
+from bcos_lm.models.modeling_bert import BertForSequenceClassification
 import json
 import random
 import os
 from tqdm import tqdm
 from saliency_utils.utils import set_random_seed, split_dataset, batch_loader
 from saliency_utils.Explainer import AttentionExplainer, GradientNPropabationExplainer, OcclusionExplainer, ShapleyValueExplainer, LimeExplainer
-
+from saliency_utils.BcosExplainer import BcosExplainer
 EXPLANATION_METHODS = {
-    "Attention": AttentionExplainer,
-    "Saliency": GradientNPropabationExplainer,
-    "DeepLift": GradientNPropabationExplainer,
-    "GuidedBackprop": GradientNPropabationExplainer,
-    "InputXGradient": GradientNPropabationExplainer,
-    "IntegratedGradients": GradientNPropabationExplainer,
-    "Occlusion": OcclusionExplainer,
-    "ShapleyValue": ShapleyValueExplainer,
-    "GradientShap": ShapleyValueExplainer,
-    "DeepLiftShap": ShapleyValueExplainer,
-    "KernelShap": ShapleyValueExplainer,
-    "Lime": LimeExplainer,
+    "Bcos": BcosExplainer,
 }
 
 class GridPointingGame:
@@ -51,7 +41,8 @@ class GridPointingGame:
         Sample and create pointing game instances 
         """
         assert num_segments == 2, "Currently only support 2 segments"
-        self.model = BertForSequenceClassification.from_pretrained(model_name_or_path, output_attentions=True)
+        config = AutoConfig.from_pretrained(model_name_or_path)
+        self.model = BertForSequenceClassification.load_from_pretrained(model_name_or_path, config=config)
         self.tokenizer = BertTokenizer.from_pretrained(model_name_or_path)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)

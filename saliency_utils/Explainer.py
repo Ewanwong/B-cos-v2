@@ -1,7 +1,7 @@
 import argparse
 import torch
 from transformers import BertTokenizer, BertForSequenceClassification
-from captum.attr import Saliency, DeepLift, GuidedBackprop, InputXGradient, IntegratedGradients, Occlusion, ShapleyValueSampling 
+from captum.attr import Saliency, DeepLift, GuidedBackprop, InputXGradient, IntegratedGradients, Occlusion, ShapleyValueSampling, DeepLiftShap, GradientShap, KernelShap 
 from saliency_utils.lime_utils import explain
 from datasets import load_dataset
 import numpy as np
@@ -11,7 +11,6 @@ import random
 from tqdm import tqdm
 from saliency_utils.utils import batch_loader
 
-#TODO: add explain hybrid documents for datasets
 
 class BertEmbeddingModelWrapper(torch.nn.Module):
     def __init__(self, model):
@@ -37,6 +36,7 @@ class BertEmbeddingModelWrapper(torch.nn.Module):
         pooled_output = self.model.dropout(pooled_output)
         logits = self.model.classifier(pooled_output)
         return logits
+
 
 class BertModelWrapper(torch.nn.Module):
     def __init__(self, model):
@@ -85,9 +85,10 @@ class BertProbabilityModelWrapper(torch.nn.Module):
 class BaseExplainer:
     def explain(self):
         raise NotImplementedError
-    
+
+
 class AttentionExplainer(BaseExplainer):
-    def __init__(self, model, tokenizer):
+    def __init__(self, model, tokenizer, method=None, baseline='zero'):
         # attention explainer can only explain the predicted classes
         self.model = model
         self.model.eval()
@@ -303,7 +304,7 @@ class AttentionExplainer(BaseExplainer):
         return attention_explanations
 
 class GradientNPropabationExplainer(BaseExplainer):
-    def __init__(self, model, tokenizer, method='saliency'):
+    def __init__(self, model, tokenizer, method='saliency', baseline='zero'):
         self.model = BertEmbeddingModelWrapper(model)
         self.model.eval()
         self.model.to(model.device)
@@ -322,6 +323,14 @@ class GradientNPropabationExplainer(BaseExplainer):
         else:
             raise ValueError(f"Invalid method {method}")
         self.device = model.device
+        if baseline == 'zero':
+            self.baseline = None
+        elif baseline == 'mask':
+            self.baseline = self.tokenizer.mask_token_id
+        elif baseline == 'pad':
+            self.baseline = self.tokenizer.pad_token_id
+        else:
+            raise ValueError(f"Invalid baseline {baseline}")
 
     def _explain(self, input_ids, attention_mask, position_ids=None, token_type_ids=None, example_indices=None, labels=None, num_classes=None, class_labels=None, only_predicted_classes=False):
 
@@ -372,6 +381,20 @@ class GradientNPropabationExplainer(BaseExplainer):
                     target=explained_labels,
                     additional_forward_args=(attention_mask,),
                     abs=False,
+                )
+            elif self.method == 'IntegratedGradients' or self.method == 'DeepLift':
+                if self.baseline is not None:
+                    token_baseline_ids = torch.ones_like(input_ids) * self.baseline 
+                    token_baseline_embeddings = self.model.model.bert.embeddings.word_embeddings(token_baseline_ids)
+                    zero_baseline_embeddings = torch.zeros_like(position_embeddings)
+                    baselines = (token_baseline_embeddings, zero_baseline_embeddings, zero_baseline_embeddings)
+                else:
+                    baselines = None
+                attributions = self.explainer.attribute(
+                    inputs=(token_embeddings, position_embeddings, token_type_embeddings),
+                    baselines=baselines,
+                    target=explained_labels,
+                    additional_forward_args=(attention_mask,)
                 )
             else:
                 attributions = self.explainer.attribute(
@@ -522,7 +545,7 @@ class GradientNPropabationExplainer(BaseExplainer):
         return saliency_results
 
 class OcclusionExplainer(BaseExplainer):
-    def __init__(self, model, tokenizer):
+    def __init__(self, model, tokenizer, method='Occlusion', baseline='zero'):
         self.model = BertModelWrapper(model)
         self.model.eval()
         self.model.to(model.device)
@@ -530,7 +553,15 @@ class OcclusionExplainer(BaseExplainer):
         self.explainer = Occlusion(self.model)
         # Occlusion parameters
         self.sliding_window_size = (1,)  # Occlude one token at a time
-        self.baseline = tokenizer.pad_token_id  # Use [PAD] token as baseline
+        if baseline == 'zero':
+            self.baseline = None
+        elif baseline == 'mask':
+            self.baseline = self.tokenizer.mask_token_id
+        elif baseline == 'pad':
+            self.baseline = self.tokenizer.pad_token_id
+        else:
+            raise ValueError(f"Invalid baseline {baseline}")
+
         self.stride = (1,)
         self.device = model.device
 
@@ -658,14 +689,28 @@ class OcclusionExplainer(BaseExplainer):
         return {"Occlusion": occlusion_results}
     
 class ShapleyValueExplainer(BaseExplainer):
-    def __init__(self, model, tokenizer, n_samples=25):
+    def __init__(self, model, tokenizer, method='ShapleyValue', baseline='zero', n_samples=25):
         self.model = BertModelWrapper(model)
         self.model.eval()
         self.model.to(model.device)
         self.tokenizer = tokenizer
         self.n_samples = n_samples
-        self.explainer = ShapleyValueSampling(self.model)
+        self.method = method
+        if method == 'ShapleyValue':
+            self.explainer = ShapleyValueSampling(self.model)
+        elif method == 'KernelShap':
+            self.explainer = KernelShap(self.model)
+        else:
+            raise ValueError(f"Invalid method {method}")
         self.device = model.device
+        if baseline == 'zero':
+            self.baseline = None
+        elif baseline == 'mask':
+            self.baseline = self.tokenizer.mask_token_id
+        elif baseline == 'pad':
+            self.baseline = self.tokenizer.pad_token_id
+        else:
+            raise ValueError(f"Invalid baseline {baseline}")
 
     def _explain(self, input_ids, attention_mask, example_indices, labels=None, num_classes=None, class_labels=None, only_predicted_classes=False):
 
@@ -690,15 +735,16 @@ class ShapleyValueExplainer(BaseExplainer):
             all_explained_labels = [predicted_classes]
 
         all_shapley_results = [[] for _ in range(batch_size)]
+        #input_ids_baselines = torch.ones_like(input_ids) * self.baseline
         for explained_labels in all_explained_labels:
             attributions = self.explainer.attribute(
                 inputs=input_ids,
-                baselines=None,
+                baselines=self.baseline,
                 target=explained_labels,
                 additional_forward_args=(attention_mask,),
-                feature_mask=None,
                 n_samples=self.n_samples
             )
+
             for i in range(batch_size):
                 tokens = self.tokenizer.convert_ids_to_tokens(input_ids[i].detach().cpu().numpy().tolist())
                 class_index = explained_labels[i]
@@ -792,7 +838,7 @@ class ShapleyValueExplainer(BaseExplainer):
 
 
 class LimeExplainer(BaseExplainer):
-    def __init__(self, model, tokenizer, batch_size=64, random_seed=42):
+    def __init__(self, model, tokenizer, method='Lime', baseline='zero', batch_size=64, random_seed=42):
         self.model = model
         self.model.eval()
 
@@ -800,6 +846,14 @@ class LimeExplainer(BaseExplainer):
         self.random_seed = random_seed
         self.prob_func = BertProbabilityModelWrapper(self.model, self.tokenizer, batch_size=batch_size)
         self.device = model.device
+        if baseline == 'zero':
+            self.baseline = None
+        elif baseline == 'mask':
+            self.baseline = self.tokenizer.mask_token_id
+        elif baseline == 'pad':
+            self.baseline = self.tokenizer.pad_token_id
+        else:
+            raise ValueError(f"Invalid baseline {baseline}")
                
     def explain(self, text, example_index, label=None, num_classes=None, class_label=None, max_length=512, only_predicted_classes=False):
         # single instance
@@ -895,21 +949,6 @@ class LimeExplainer(BaseExplainer):
                 'attribution': list(zip(explanation.features, explanation.feature_importance.tolist())),
             }
             lime_results.append(result)
-            if num_classes == 2:
-                neg_result = {
-                    'example_id': example_index[0],
-                    'text': ' '.join(explanation.features),
-                    #'tokens': explanation.features,
-                    'true_label': label[0],
-                    'predicted_class': predicted_class,
-                    'predicted_class_confidence': confidences[0][predicted_class],
-                    'target_class': all_explained_labels[1],
-                    'target_class_confidence': 1 - confidences[0][explained_label],
-                    'method': 'Lime',
-                    'attribution': list(zip(explanation.features, [-x for x in explanation.feature_importance.tolist()])),
-                }
-                lime_results.append(neg_result)
-                break
         return {"Lime": [lime_results]}
         
 
