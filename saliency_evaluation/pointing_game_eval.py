@@ -1,21 +1,23 @@
 from saliency_utils.pointing_game_utils import GridPointingGame
-from saliency_utils.Explainer import AttentionExplainer, GradientNPropabationExplainer, OcclusionExplainer, ShapleyValueExplainer, LimeExplainer
+from saliency_utils.Explainer import BcosExplainer, AttentionExplainer, GradientNPropabationExplainer, OcclusionExplainer, ShapleyValueExplainer, LimeExplainer
 from argparse import ArgumentParser
 import json
 import torch
-from transformers import BertTokenizer, BertForSequenceClassification
+from transformers import BertTokenizer, AutoConfig
+from bcos_lm.models.modeling_bert import BertForSequenceClassification
 import os
 
 EXPLANATION_METHODS = {
+    #"Bcos": BcosExplainer,
     #"Attention": AttentionExplainer,
-    #"Saliency": GradientNPropabationExplainer,
-    #"DeepLift": GradientNPropabationExplainer,
-    #"GuidedBackprop": GradientNPropabationExplainer,
-    #"InputXGradient": GradientNPropabationExplainer,
-    #"IntegratedGradients": GradientNPropabationExplainer,
-    #"Occlusion": OcclusionExplainer,
-    #"ShapleyValue": ShapleyValueExplainer,
-    #"KernelShap": ShapleyValueExplainer,
+    "Saliency": GradientNPropabationExplainer,
+    "DeepLift": GradientNPropabationExplainer,
+    "GuidedBackprop": GradientNPropabationExplainer,
+    "InputXGradient": GradientNPropabationExplainer,
+    "IntegratedGradients": GradientNPropabationExplainer,
+    "Occlusion": OcclusionExplainer,
+    "ShapleyValue": ShapleyValueExplainer,
+    "KernelShap": ShapleyValueExplainer,
     "Lime": LimeExplainer,
 }
 
@@ -32,7 +34,7 @@ def main(args):
     args.seed = int(args.seed) if args.seed else None
     args.shap_n_samples = int(args.shap_n_samples) if args.shap_n_samples else None
     args.split_ratio = float(args.split_ratio) if args.split_ratio else None
-    args.embedding_attributions = args.embedding_attributions if args.embedding_attributions != 'None' else None
+    args.embedding_attributions = args.embedding_attributions if len(args.embedding_attributions) != 0 else None
 
     pointing_game = GridPointingGame(
         model_name_or_path=args.model_dir,
@@ -49,6 +51,8 @@ def main(args):
         num_instances=args.num_examples,
         min_confidence=0.5,
         random_seed=args.seed,
+        bcos=args.bcos,
+        b=args.b,
     )
 
     # Initialize the explainer
@@ -69,6 +73,7 @@ def main(args):
             save_explanations_path=explanation_path,
             save_evaluation_results_path=evaluation_path,
             baseline=args.baseline,
+            relative=args.relative,
         )
 
 
@@ -88,10 +93,13 @@ if __name__ == '__main__':
     parser.add_argument('--num_examples', type=int, default=-1, help='Number of examples to process (-1 for all)')
     parser.add_argument('--baseline', type=str, default='pad', help='Baseline for the attribution methods, select from zero, mask, pad')
     parser.add_argument('--methods', nargs='+', default=None, help='List of attribution methods to use')
-    parser.add_argument('--embedding_attributions', nargs='+', default=None, help='List of embeddings to attribute the prediction to')
+    parser.add_argument('--embedding_attributions', nargs='+', default=[], help='List of embeddings to attribute the prediction to')
     parser.add_argument('--output_dir', type=str, default='baseline_results/all_methods_1000_examples_256_pointing_game_results', help='Directory to save the output files')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     parser.add_argument('--shap_n_samples', type=int, default=25, help='Number of samples for Shapley Value Sampling')
+    parser.add_argument('--bcos', action='store_true', help='Use Bcos model')
+    parser.add_argument('--b', type=float, default=2.0, help='Bcos parameter')
+    parser.add_argument('--relative', action='store_true', help='explain relative logits')
 
     args = parser.parse_args()
     main(args)

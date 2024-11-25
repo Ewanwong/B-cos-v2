@@ -1,9 +1,10 @@
-from saliency_utils.Explainer import AttentionExplainer, GradientNPropabationExplainer, OcclusionExplainer, ShapleyValueExplainer, LimeExplainer
+from saliency_utils.Explainer import BcosExplainer, AttentionExplainer, GradientNPropabationExplainer, OcclusionExplainer, ShapleyValueExplainer, LimeExplainer
 from saliency_utils.utils import set_random_seed, split_dataset
 import argparse
 import torch
 from torch.utils.data import DataLoader
-from transformers import BertTokenizer, BertForSequenceClassification
+from transformers import BertTokenizer, AutoConfig
+from bcos_lm.models.modeling_bert import BertForSequenceClassification
 from datasets import load_dataset
 import numpy as np
 import json
@@ -12,16 +13,17 @@ import random
 from tqdm import tqdm
 
 EXPLANATION_METHODS = {
-    #"Attention": AttentionExplainer,
-    #"Saliency": GradientNPropabationExplainer,
+    "Bcos": BcosExplainer,
+    "Attention": AttentionExplainer,
+    "Saliency": GradientNPropabationExplainer,
     "DeepLift": GradientNPropabationExplainer,
-    #"GuidedBackprop": GradientNPropabationExplainer,
-    #"InputXGradient": GradientNPropabationExplainer,
+    "GuidedBackprop": GradientNPropabationExplainer,
+    "InputXGradient": GradientNPropabationExplainer,
     "IntegratedGradients": GradientNPropabationExplainer,
     "Occlusion": OcclusionExplainer,
     "ShapleyValue": ShapleyValueExplainer,
     "KernelShap": ShapleyValueExplainer,
-    #"Lime": LimeExplainer,
+    "Lime": LimeExplainer,
 }
 
 
@@ -40,7 +42,12 @@ def main(args):
     set_random_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Load pre-trained BERT model and tokenizer
-    model = BertForSequenceClassification.from_pretrained(args.model_dir, output_attentions=True)
+    config = AutoConfig.from_pretrained(args.model_dir, num_labels=args.num_labels)
+    config.num_labels = args.num_labels
+    config.bcos = args.bcos
+    config.b = args.b
+    config.output_attentions = True
+    model = BertForSequenceClassification.load_from_pretrained(args.model_dir, config=config)
     model.eval()
     model.to(device)
 
@@ -70,7 +77,9 @@ def main(args):
 
     for method in attribution_methods:
         print(f"\nRunning {method} explainer...")
-        if EXPLANATION_METHODS[method] == ShapleyValueExplainer:
+        if EXPLANATION_METHODS[method] == BcosExplainer:
+            explainer = BcosExplainer(model, tokenizer, args.relative)
+        elif EXPLANATION_METHODS[method] == ShapleyValueExplainer:
             explainer = ShapleyValueExplainer(model, tokenizer, method, args.baseline, args.shap_n_samples)
         # for GradientNPropabationExplainer, we need to specify the method
         elif EXPLANATION_METHODS[method] == GradientNPropabationExplainer:
@@ -109,6 +118,9 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     parser.add_argument('--shap_n_samples', type=int, default=25, help='Number of samples for Shapley Value Sampling')
     parser.add_argument('--only_predicted_classes', action='store_true', help='Only explain the predicted class')
+    parser.add_argument('--bcos', action='store_true', help='Use Bcos model')
+    parser.add_argument('--b', type=float, default=2.0, help='Bcos parameter')
+    parser.add_argument('--relative', action='store_true', help='explain relative logits')
 
     args = parser.parse_args()
     main(args)

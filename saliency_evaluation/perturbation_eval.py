@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
-from transformers import BertTokenizer, BertForSequenceClassification
-#from bcos_lm.models.bert import BertForSequenceClassification
+from transformers import BertTokenizer, AutoConfig
+from bcos_lm.models.modeling_bert import BertForSequenceClassification
 from saliency_utils.perturbation_utils import select_rationales, compute_comprehensiveness, compute_sufficiency, compute_perturbation_auc
 from argparse import ArgumentParser
 import json
@@ -17,7 +17,7 @@ def batch_loader(data, batch_size):
 
 def is_embedding_attribution(method):
     # check if the prediction is attributed to the embeddings (token, position, token_type)
-    if method in ['Saliency_L2', "Saliency_mean", "DeepLift_mean", "DeepLift_L2", "GuidedBackprop_mean", "GuidedBackprop_L2", "InputXGradient_mean", "InputXGradient_L2", "IntegratedGradients_mean", "IntegratedGradients_L2",]:
+    if "_mean" in method or "_L2" in method:
         return True
     return False
 
@@ -48,7 +48,12 @@ def main(args):
 
     # Load tokenizer and model
     tokenizer = BertTokenizer.from_pretrained(args.model_dir)
-    model = BertForSequenceClassification.from_pretrained(args.model_dir).to(device)
+    config = AutoConfig.from_pretrained(args.model_dir, num_labels=args.num_labels)
+    config.output_attentions = True
+    config.num_labels = args.num_labels
+    config.bcos = args.bcos
+    config.b = args.b
+    model = BertForSequenceClassification.load_from_pretrained(args.model_dir, config=config).to(device)
     model.eval()
     if args.mask_type == "mask":
         mask_token_id = tokenizer.mask_token_id
@@ -149,9 +154,11 @@ if __name__ == '__main__':
     #parser.add_argument('--methods', type=str, default='', help='Comma-separated list of attribution methods to use')
     parser.add_argument('--embedding_attributions', nargs='+', default=[], help='List of embeddings to attribute the prediction to')
     parser.add_argument('--mask_type', type=str, default='mask', help='Type of token to mask for perturbation')
-    parser.add_argument('--percentages', type=str, default='0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0', help='Comma-separated list of percentages for selecting rationales')
+    parser.add_argument('--percentages', type=str, default='0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9', help='Comma-separated list of percentages for selecting rationales')
     #parser.add_argument('--output_path', type=str, default='baseline_saliency_results/all_methods_1000_examples_512/Attention_perturbation_results.json', help='Directory to save the output files')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
+    parser.add_argument('--bcos', action='store_true', help='Use BCOS model')
+    parser.add_argument('--b', type=float, default=2.0, help='BCOS parameter')
 
     args = parser.parse_args()
     main(args)

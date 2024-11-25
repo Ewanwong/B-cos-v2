@@ -3,8 +3,9 @@ import json
 import logging
 import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Subset
-from transformers import (BertTokenizer, BertForSequenceClassification, AdamW,
+from transformers import (BertTokenizer, AutoConfig, AdamW,
                           get_linear_schedule_with_warmup)
+from bcos_lm.models.modeling_bert import BertForSequenceClassification
 from datasets import load_dataset
 import numpy as np
 from sklearn.metrics import accuracy_score
@@ -19,37 +20,37 @@ def main():
     # Hyperparameters
     parser.add_argument('--model_name_or_path', type=str, default='bert-base-uncased',
                         help='Pre-trained model name or path')
-    parser.add_argument('--dataset_name', type=str, default='stanfordnlp/imdb',
-                        help='Dataset name (default: imdb)')
-    parser.add_argument('--num_labels', type=int, default=2,
+    parser.add_argument('--dataset_name', type=str, default='fancyzhx/ag_news',
+                        help='Dataset name (default: ag_news)')
+    parser.add_argument('--num_labels', type=int, default=4,
                         help='Number of labels in the dataset')
-    parser.add_argument('--output_dir', type=str, default='/local/yifwang/bert_base_imdb_512',
+    parser.add_argument('--output_dir', type=str, default='/local/yifwang/bcos_bert_base_agnews_512',
                         help='Directory to save the model')
     parser.add_argument('--max_seq_length', type=int, default=512,
                         help='Maximum input sequence length after tokenization')
     parser.add_argument('--batch_size', type=int, default=16,
                         help='Batch size for training and evaluation')
-    parser.add_argument('--learning_rate', type=float, default=2e-5,
+    parser.add_argument('--learning_rate', type=float, default=3e-5,
                         help='Learning rate for the optimizer')
-    parser.add_argument('--warmup_steps_or_ratio', type=int, default=0.1,
+    parser.add_argument('--warmup_steps_or_ratio', type=float, default=0.1,
                         help='Number or ratio of warmup steps for the learning rate scheduler')
-    parser.add_argument('--num_train_epochs', type=int, default=5,
+    parser.add_argument('--num_train_epochs', type=int, default=10,
                         help='Total number of training epochs')
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed for initialization')
-    parser.add_argument('--early_stopping_patience', type=int, default=5,
+    parser.add_argument('--early_stopping_patience', type=int, default=-1,
                         help='Number of epochs with no improvement after which training will be stopped')
-    parser.add_argument('--config_file', type=str, default=None,
-                        help='Path to JSON configuration file')
     parser.add_argument('--log_file', type=str, default='training.log',
                         help='Path to the log file')
-    parser.add_argument('--eval_steps', type=int, default=1000,
+    parser.add_argument('--eval_steps', type=int, default=2000,
                         help='Evaluate the model every X training steps')
-    parser.add_argument('--save_steps', type=int, default=1000,
+    parser.add_argument('--save_steps', type=int, default=2000,
                         help='Save the model every X training steps')
     parser.add_argument('--split_ratio', type=float, default=0.5,
                     help='Ratio to split the test set into validation and test sets')
-
+    parser.add_argument('--b', type=float, default=2.0,)
+    parser.add_argument('--bcos', action='store_true', help='Use BCOS')
+    parser.add_argument('--bce', action='store_true', help='Use bce loss instead of cross entropy loss')
     args = parser.parse_args()
 
     # create output directory if it doesn't exist
@@ -57,13 +58,6 @@ def main():
         os.makedirs(args.output_dir)
     
     log_file = os.path.join(args.output_dir, args.log_file)
-
-    # Load hyperparameters from the configuration file if provided
-    if args.config_file:
-        with open(args.config_file, 'r') as f:
-            config_args = json.load(f)
-        for key, value in config_args.items():
-            setattr(args, key, value)
 
     # Set up logging
     logging.basicConfig(
@@ -107,11 +101,15 @@ def main():
     # Load the dataset
     logging.info(f"Loading {args.dataset_name} dataset...")
     dataset = load_dataset(args.dataset_name)
-    del dataset['unsupervised']
 
     # Initialize the tokenizer and model
     tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
-    model = BertForSequenceClassification.from_pretrained(args.model_name_or_path, num_labels=args.num_labels)
+    config = AutoConfig.from_pretrained(args.model_name_or_path, num_labels=args.num_labels)
+    config.num_labels = args.num_labels
+    config.bcos = args.bcos
+    config.b = args.b
+    config.bce = args.bce
+    model = BertForSequenceClassification.load_from_pretrained(args.model_name_or_path, config=config)
     model.to(device)
 
     # Tokenization function
@@ -129,6 +127,7 @@ def main():
     tokenized_datasets.set_format(type='torch', columns=['input_ids', 'attention_mask', 'label'])
     # change the column "label" to "labels" to match the model's forward function
     tokenized_datasets = tokenized_datasets.rename_column('label', 'labels')
+
 
     # Prepare data loaders
     train_dataset = tokenized_datasets['train']
@@ -182,7 +181,7 @@ def main():
         return accuracy
 
     # Early stopping parameters
-    early_stopping_patience = args.early_stopping_patience if args.early_stopping_patience is not None else np.inf
+    early_stopping_patience = args.early_stopping_patience if args.early_stopping_patience != -1 else np.inf
     best_accuracy = 0.0
     evaluations_no_improve = 0
     global_step = 0
@@ -281,7 +280,7 @@ def main():
             break
 
     # Load the best model
-    model = BertForSequenceClassification.from_pretrained(args.output_dir)
+    model = BertForSequenceClassification.load_from_pretrained(args.output_dir, config=config)
     tokenizer = BertTokenizer.from_pretrained(args.output_dir)
     model.to(device)
 

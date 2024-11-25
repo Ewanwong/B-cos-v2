@@ -7,4 +7,8 @@ python -m saliency_generation.gen_explanations \
     --max_length=512 \
     --num_examples=100 \
     --output_dir="baseline_explanations/try" \
+    --seed=42 \
+    --bcos \
+    --b 2.0 \
+    --relative \
     

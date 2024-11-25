@@ -2,15 +2,17 @@ import torch
 from torch.utils.data import Subset
 import numpy as np
 from datasets import load_dataset
-from transformers import BertForSequenceClassification, BertTokenizer
+from transformers import BertTokenizer, AutoConfig
+from bcos_lm.models.modeling_bert import BertForSequenceClassification
 import json
 import random
 import os
 from tqdm import tqdm
 from saliency_utils.utils import set_random_seed, split_dataset, batch_loader
-from saliency_utils.Explainer import AttentionExplainer, GradientNPropabationExplainer, OcclusionExplainer, ShapleyValueExplainer, LimeExplainer
+from saliency_utils.Explainer import BcosExplainer, AttentionExplainer, GradientNPropabationExplainer, OcclusionExplainer, ShapleyValueExplainer, LimeExplainer
 
 EXPLANATION_METHODS = {
+    "Bcos": BcosExplainer,
     "Attention": AttentionExplainer,
     "Saliency": GradientNPropabationExplainer,
     "DeepLift": GradientNPropabationExplainer,
@@ -34,8 +36,6 @@ class GridPointingGame:
             split='test',
             split_ratio=0.5,
             embedding_attributions=None,
-            #load_confidence_results_path=None,
-            #save_confidence_results_path=None,
             load_pointing_game_examples_path=None,
             save_pointing_game_examples_path=None,
             num_segments=2,
@@ -44,6 +44,8 @@ class GridPointingGame:
             num_instances=-1,
             min_confidence=0.5,
             random_seed=42,
+            bcos=False,
+            b=2.0,
     ):
         """
         Filter and truncate dataset
@@ -51,7 +53,12 @@ class GridPointingGame:
         Sample and create pointing game instances 
         """
         assert num_segments == 2, "Currently only support 2 segments"
-        self.model = BertForSequenceClassification.from_pretrained(model_name_or_path, output_attentions=True)
+        config = AutoConfig.from_pretrained(model_name_or_path, num_labels=num_labels)
+        config.num_labels = num_labels
+        config.bcos = bcos,
+        config.b = b
+        config.output_attentions = True
+        self.model = BertForSequenceClassification.load_from_pretrained(model_name_or_path, config=config)
         self.tokenizer = BertTokenizer.from_pretrained(model_name_or_path)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
@@ -65,6 +72,8 @@ class GridPointingGame:
         self.num_instances = num_instances
         self.min_confidence = min_confidence
         self.embedding_attributions = embedding_attributions
+        self.bcos = bcos
+        self.b = b
 
 
         # detect string None
@@ -270,17 +279,19 @@ class GridPointingGame:
             class_indexer[selected_class] += 1
         return instance, label, confidence
 
-    def initialize_explainer(self, method, model, tokenizer, baseline='zero', n_samples=25):
-        if EXPLANATION_METHODS[method] == ShapleyValueExplainer:
-            explainer = ShapleyValueExplainer(model, tokenizer, method, baseline, n_samples)
+    def initialize_explainer(self, method, model, tokenizer, baseline='pad', n_samples=25, relative=True):
+        if EXPLANATION_METHODS[method] == BcosExplainer:
+            explainer = BcosExplainer(model=model, tokenizer=tokenizer, relative=relative)
+        elif EXPLANATION_METHODS[method] == ShapleyValueExplainer:
+            explainer = ShapleyValueExplainer(model=model, tokenizer=tokenizer, method=method, baseline=baseline, n_samples=n_samples)
         # for GradientNPropabationExplainer, we need to specify the method
         elif EXPLANATION_METHODS[method] == GradientNPropabationExplainer:
-            explainer = EXPLANATION_METHODS[method](model, tokenizer, method, baseline)
+            explainer = EXPLANATION_METHODS[method](model=model, tokenizer=tokenizer, method=method, baseline=baseline)
         else:
-            explainer = EXPLANATION_METHODS[method](model, tokenizer) 
+            explainer = EXPLANATION_METHODS[method](model=model, tokenizer=tokenizer) 
         return explainer
     
-    def run_analysis(self, method_name, n_samples=None, load_explanations_path=None, save_explanations_path=None, save_evaluation_results_path=None, baseline='zero'):
+    def run_analysis(self, method_name, n_samples=None, load_explanations_path=None, save_explanations_path=None, save_evaluation_results_path=None, baseline='pad', relative=True):
         # encode the instances with multiple segments
         # compute the saliency scores for each segment for each class
         # look at how much positive saliency is assigned to the correct class; and whether the largest attribution is assigned to the correct class
@@ -291,7 +302,7 @@ class GridPointingGame:
         if load_explanations_path is not None:
             explanations = self.load_from_file(load_explanations_path)
         else:
-            explainer = self.initialize_explainer(method_name, self.model, self.tokenizer, baseline, n_samples)
+            explainer = self.initialize_explainer(method=method_name, model=self.model, tokenizer=self.tokenizer, baseline=baseline, n_samples=n_samples, relative=relative)
             explanations = self.explain_instances(explainer, save_explanations_path)
         evaluation_results = self.evaluate_explanations(explanations, save_evaluation_results_path)
         return evaluation_results

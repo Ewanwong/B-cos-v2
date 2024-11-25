@@ -1,6 +1,6 @@
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=2
 python -m saliency_evaluation.perturbation_eval \
-    --explanation_dir="baseline_saliency_results/all_methods_1000_examples_512" \
+    --explanation_dir="baseline_results/perturbation_imdb" \
     --model_dir="models/bert_base_imdb_512" \
     --num_labels=2 \
     --batch_size=16 \
