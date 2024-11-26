@@ -42,15 +42,17 @@ def main():
                         help='Number of epochs with no improvement after which training will be stopped')
     parser.add_argument('--log_file', type=str, default='training.log',
                         help='Path to the log file')
-    parser.add_argument('--eval_steps', type=int, default=2000,
+    parser.add_argument('--eval_steps', type=int, default=1000,
                         help='Evaluate the model every X training steps')
-    parser.add_argument('--save_steps', type=int, default=2000,
+    parser.add_argument('--save_steps', type=int, default=1000,
                         help='Save the model every X training steps')
     parser.add_argument('--split_ratio', type=float, default=0.5,
                     help='Ratio to split the test set into validation and test sets')
     parser.add_argument('--b', type=float, default=2.0,)
     parser.add_argument('--bcos', action='store_true', help='Use BCOS')
     parser.add_argument('--bce', action='store_true', help='Use bce loss instead of cross entropy loss')
+    parser.add_argument('--relative_logits', action='store_true', help='Use relative logit')
+    parser.add_argument('--bcos_attention', action='store_true', help='Use BCOS attention')
     args = parser.parse_args()
 
     # create output directory if it doesn't exist
@@ -109,6 +111,8 @@ def main():
     config.bcos = args.bcos
     config.b = args.b
     config.bce = args.bce
+    config.relative_logits = args.relative_logits
+    config.bcos_attention = args.bcos_attention
     model = BertForSequenceClassification.load_from_pretrained(args.model_name_or_path, config=config)
     model.to(device)
 

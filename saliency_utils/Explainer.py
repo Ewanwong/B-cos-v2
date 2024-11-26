@@ -17,13 +17,12 @@ class BertEmbeddingModelWrapper(torch.nn.Module):
         super(BertEmbeddingModelWrapper, self).__init__()
         self.model = model
 
-    def forward(self, token_embeddings, position_embeddings, token_type_embeddings, attention_mask=None):
-        embeddings = token_embeddings + position_embeddings + token_type_embeddings
+    def forward(self, embeddings, attention_mask=None):
+        #embeddings = token_embeddings + position_embeddings + token_type_embeddings
         extended_attention_mask = self.model.get_extended_attention_mask(
             attention_mask, embeddings.shape[:2], embeddings.device
         )
-        embeddings = self.model.bert.embeddings.LayerNorm(embeddings)
-        embeddings = self.model.bert.embeddings.dropout(embeddings)
+
         #head_mask = [None] * self.model.config.num_hidden_layers
         head_mask = self.model.get_head_mask(None, self.model.config.num_hidden_layers) 
         encoder_outputs = self.model.bert.encoder(
@@ -42,8 +41,8 @@ class RelativeBertEmbeddingModelWrapper(BertEmbeddingModelWrapper):
     def __init__(self, model):
         super(RelativeBertEmbeddingModelWrapper, self).__init__(model)
 
-    def forward(self, token_embeddings, position_embeddings, token_type_embeddings, attention_mask=None):
-        logits = super().forward(token_embeddings, position_embeddings, token_type_embeddings, attention_mask)
+    def forward(self, embeddings, attention_mask=None):
+        logits = super().forward(embeddings, attention_mask)
         return logits - logits.mean(dim=1, keepdim=True)
 
 class BertModelWrapper(torch.nn.Module):
@@ -230,22 +229,18 @@ class BcosExplainer(BaseExplainer):
         batch_size = input_ids.shape[0]
 
         # Extract embeddings
-        token_embeddings = self.model.model.bert.embeddings.word_embeddings(input_ids)
-        position_embeddings = self.model.model.bert.embeddings.position_embeddings(position_ids)
-        token_type_embeddings = self.model.model.bert.embeddings.token_type_embeddings(token_type_ids)
+        embeddings = self.model.model.bert.embeddings(input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids)
 
         # Get the model's predictions
         with torch.no_grad():
-            outputs = self.model(token_embeddings, position_embeddings, token_type_embeddings, attention_mask=attention_mask)
+            outputs = self.model(embeddings, attention_mask=attention_mask)
         predicted_classes = outputs.argmax(dim=-1).detach().cpu().numpy().tolist()
         # confidence for each class
         confidences = torch.nn.functional.softmax(outputs, dim=-1).detach().cpu().numpy().tolist()
 
         # Set requires_grad to True for embeddings we want to compute attributions for
-        token_embeddings.requires_grad_()
-        position_embeddings.requires_grad_()
-        token_type_embeddings.requires_grad_()
-
+        embeddings.requires_grad_()
+        
         input_ids_cpu = input_ids.detach().cpu().numpy().tolist()
         all_explained_labels = []
         if class_labels is None and num_classes is not None:           
@@ -266,11 +261,11 @@ class BcosExplainer(BaseExplainer):
             with self.model.model.explanation_mode():
                 explainer = InputXGradient(self.model)
                 attributions = explainer.attribute(
-                    inputs=(token_embeddings, position_embeddings, token_type_embeddings),
+                    inputs=(embeddings),
                     target=explained_labels,
                     additional_forward_args=(attention_mask,)
                 )
-            attributions_token, attributions_position, attributions_token_type = attributions
+            attributions_all = attributions
             for i in range(batch_size):
                 tokens = self.tokenizer.convert_ids_to_tokens(input_ids_cpu[i])
                 class_index = explained_labels[i]
@@ -281,12 +276,9 @@ class BcosExplainer(BaseExplainer):
                     true_label = None                    
 
                 # Compute saliency metrics for each token
-                saliency_token_l2 = torch.norm(attributions_token[i:i+1], dim=-1).detach().cpu().numpy()[0]
-                saliency_token_mean = attributions_token[i:i+1].mean(dim=-1).detach().cpu().numpy()[0]
-                saliency_position_l2 = torch.norm(attributions_position[i:i+1], dim=-1).detach().cpu().numpy()[0]
-                saliency_position_mean = attributions_position[i:i+1].mean(dim=-1).detach().cpu().numpy()[0]
-                saliency_token_type_l2 = torch.norm(attributions_token_type[i:i+1], dim=-1).detach().cpu().numpy()[0]
-                saliency_token_type_mean = attributions_token_type[i:i+1].mean(dim=-1).detach().cpu().numpy()[0]
+                saliency_l2 = torch.norm(attributions_all[i:i+1], dim=-1).detach().cpu().numpy()[0]
+                saliency_mean = attributions_all[i:i+1].mean(dim=-1).detach().cpu().numpy()[0]
+
                 # Collect results for the current example and class
                 # skip padding tokens
                 tokens = [token for token in tokens if token != self.tokenizer.pad_token]
@@ -301,10 +293,7 @@ class BcosExplainer(BaseExplainer):
                     'target_class': class_index,
                     'target_class_confidence': confidences[i][class_index],
                     'method': f"{self.method}_L2",
-                    'attribution': list(zip(tokens, saliency_token_l2.tolist()[:real_length])),
-                    'attribution_token': list(zip(tokens, saliency_token_l2.tolist()[:real_length])), 
-                    'attribution_position': list(zip(tokens, saliency_position_l2.tolist()[:real_length])),
-                    'attribution_token_type': list(zip(tokens, saliency_token_type_l2.tolist()[:real_length])),
+                    'attribution': list(zip(tokens, saliency_l2.tolist()[:real_length])),
                 }
 
                 result_mean = {
@@ -317,10 +306,7 @@ class BcosExplainer(BaseExplainer):
                     'target_class': class_index,
                     'target_class_confidence': confidences[i][class_index],
                     'method': f"{self.method}_mean",
-                    "attribution": list(zip(tokens, saliency_token_mean.tolist()[:real_length])),
-                    'attribution_token': list(zip(tokens, saliency_token_mean.tolist()[:real_length])),
-                    'attribution_position': list(zip(tokens, saliency_position_mean.tolist()[:real_length])),
-                    'attribution_token_type': list(zip(tokens, saliency_token_type_mean.tolist()[:real_length])),
+                    "attribution": list(zip(tokens, saliency_mean.tolist()[:real_length])),
                 }
                 all_saliency_l2_results[i].append(result_l2)
                 all_saliency_mean_results[i].append(result_mean)
@@ -436,6 +422,7 @@ class AttentionExplainer(BaseExplainer):
             if only_predicted_classes:
                 class_indices = [predicted_class]
             for class_idx in class_indices:
+
             # skip all padding tokens
                 raw_attention_result = {
                     'index': example_indices[i],
@@ -530,21 +517,17 @@ class GradientNPropabationExplainer(BaseExplainer):
 
 
         # Extract embeddings
-        token_embeddings = self.model.model.bert.embeddings.word_embeddings(input_ids)
-        position_embeddings = self.model.model.bert.embeddings.position_embeddings(position_ids)
-        token_type_embeddings = self.model.model.bert.embeddings.token_type_embeddings(token_type_ids)
+        embeddings = self.model.model.bert.embeddings(input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids)
 
         # Get the model's predictions
         with torch.no_grad():
-            outputs = self.model(token_embeddings, position_embeddings, token_type_embeddings, attention_mask=attention_mask)
+            outputs = self.model(embeddings, attention_mask=attention_mask)
         predicted_classes = outputs.argmax(dim=-1).detach().cpu().numpy().tolist()
         # confidence for each class
         confidences = torch.nn.functional.softmax(outputs, dim=-1).detach().cpu().numpy().tolist()
 
         # Set requires_grad to True for embeddings we want to compute attributions for
-        token_embeddings.requires_grad_()
-        position_embeddings.requires_grad_()
-        token_type_embeddings.requires_grad_()
+        embeddings.requires_grad_()
 
         input_ids_cpu = input_ids.detach().cpu().numpy().tolist()
         all_explained_labels = []
@@ -564,7 +547,7 @@ class GradientNPropabationExplainer(BaseExplainer):
         for explained_labels in all_explained_labels:
             if self.method == 'Saliency':
                 attributions = self.explainer.attribute(
-                    inputs=(token_embeddings, position_embeddings, token_type_embeddings),
+                    inputs=(embeddings),
                     target=explained_labels,
                     additional_forward_args=(attention_mask,),
                     abs=False,
@@ -572,24 +555,22 @@ class GradientNPropabationExplainer(BaseExplainer):
             elif self.method == 'IntegratedGradients' or self.method == 'DeepLift':
                 if self.baseline is not None:
                     token_baseline_ids = torch.ones_like(input_ids) * self.baseline 
-                    token_baseline_embeddings = self.model.model.bert.embeddings.word_embeddings(token_baseline_ids)
-                    zero_baseline_embeddings = torch.zeros_like(position_embeddings)
-                    baselines = (token_baseline_embeddings, zero_baseline_embeddings, zero_baseline_embeddings)
+                    baselines = self.model.model.bert.embeddings(token_baseline_ids)
                 else:
                     baselines = None
                 attributions = self.explainer.attribute(
-                    inputs=(token_embeddings, position_embeddings, token_type_embeddings),
+                    inputs=(embeddings),
                     baselines=baselines,
                     target=explained_labels,
                     additional_forward_args=(attention_mask,)
                 )
             else:
                 attributions = self.explainer.attribute(
-                    inputs=(token_embeddings, position_embeddings, token_type_embeddings),
+                    inputs=(embeddings),
                     target=explained_labels,
                     additional_forward_args=(attention_mask,)
                 )
-            attributions_token, attributions_position, attributions_token_type = attributions
+            attributions_all = attributions
 
 
             for i in range(batch_size):
@@ -603,12 +584,8 @@ class GradientNPropabationExplainer(BaseExplainer):
                     true_label = None                    
 
                 # Compute saliency metrics for each token
-                saliency_token_l2 = torch.norm(attributions_token[i:i+1], dim=-1).detach().cpu().numpy()[0]
-                saliency_token_mean = attributions_token[i:i+1].mean(dim=-1).detach().cpu().numpy()[0]
-                saliency_position_l2 = torch.norm(attributions_position[i:i+1], dim=-1).detach().cpu().numpy()[0]
-                saliency_position_mean = attributions_position[i:i+1].mean(dim=-1).detach().cpu().numpy()[0]
-                saliency_token_type_l2 = torch.norm(attributions_token_type[i:i+1], dim=-1).detach().cpu().numpy()[0]
-                saliency_token_type_mean = attributions_token_type[i:i+1].mean(dim=-1).detach().cpu().numpy()[0]
+                saliency_l2 = torch.norm(attributions_all[i:i+1], dim=-1).detach().cpu().numpy()[0]
+                saliency_mean = attributions_all[i:i+1].mean(dim=-1).detach().cpu().numpy()[0]
                 # Collect results for the current example and class
                 # skip padding tokens
                 tokens = [token for token in tokens if token != self.tokenizer.pad_token]
@@ -623,10 +600,7 @@ class GradientNPropabationExplainer(BaseExplainer):
                     'target_class': class_index,
                     'target_class_confidence': confidences[i][class_index],
                     'method': f"{self.method}_L2",
-                    'attribution': list(zip(tokens, saliency_token_l2.tolist()[:real_length])),
-                    'attribution_token': list(zip(tokens, saliency_token_l2.tolist()[:real_length])), 
-                    'attribution_position': list(zip(tokens, saliency_position_l2.tolist()[:real_length])),
-                    'attribution_token_type': list(zip(tokens, saliency_token_type_l2.tolist()[:real_length])),
+                    'attribution': list(zip(tokens, saliency_l2.tolist()[:real_length])),
                 }
 
                 result_mean = {
@@ -639,10 +613,7 @@ class GradientNPropabationExplainer(BaseExplainer):
                     'target_class': class_index,
                     'target_class_confidence': confidences[i][class_index],
                     'method': f"{self.method}_mean",
-                    "attribution": list(zip(tokens, saliency_token_mean.tolist()[:real_length])),
-                    'attribution_token': list(zip(tokens, saliency_token_mean.tolist()[:real_length])),
-                    'attribution_position': list(zip(tokens, saliency_position_mean.tolist()[:real_length])),
-                    'attribution_token_type': list(zip(tokens, saliency_token_type_mean.tolist()[:real_length])),
+                    "attribution": list(zip(tokens, saliency_mean.tolist()[:real_length])),
                 }
                 all_saliency_l2_results[i].append(result_l2)
                 all_saliency_mean_results[i].append(result_mean)
@@ -874,9 +845,9 @@ class LimeExplainer(BaseExplainer):
             all_explained_labels = [predicted_class]
 
         lime_results = []
-        def bert_tokenizer(text):
+        def trunc_tokenizer(text):
             return self.tokenizer.tokenize(text)[:max_length-2] # subtract 2 for [CLS] and [SEP]
-        tokenize_func = bert_tokenizer
+        tokenize_func = trunc_tokenizer
         for explained_label in all_explained_labels:
             explanation = explain(text[0],
                 predict_fn=self.prob_func,
@@ -921,9 +892,9 @@ class LimeExplainer(BaseExplainer):
             all_explained_labels = [predicted_class]
 
         lime_results = []
-        def bert_tokenizer(text):
+        def trunc_tokenizer(text):
             return self.tokenizer.tokenize(text)[:max_length-2] # subtract 2 for [CLS] and [SEP]
-        tokenize_func = bert_tokenizer
+        tokenize_func = trunc_tokenizer
         # if num_classes is 2, run the explanation only once and generate explanation for the other class with minus attribution scores
 
         for explained_label in all_explained_labels:

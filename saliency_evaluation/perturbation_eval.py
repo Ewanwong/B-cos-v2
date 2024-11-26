@@ -29,7 +29,7 @@ def main(args):
     args.max_length = int(args.max_length) if args.max_length else None
     args.num_examples = int(args.num_examples) if args.num_examples else None
     args.seed = int(args.seed) if args.seed else None
-    args.embedding_attributions = args.embedding_attributions if args.embedding_attributions != 'None' else None
+    #args.embedding_attributions = args.embedding_attributions if args.embedding_attributions != 'None' else None
 
     # Set random seed for reproducibility
     def set_random_seed(seed):
@@ -51,8 +51,7 @@ def main(args):
     config = AutoConfig.from_pretrained(args.model_dir, num_labels=args.num_labels)
     config.output_attentions = True
     config.num_labels = args.num_labels
-    config.bcos = args.bcos
-    config.b = args.b
+    #print(config)
     model = BertForSequenceClassification.load_from_pretrained(args.model_dir, config=config).to(device)
     model.eval()
     if args.mask_type == "mask":
@@ -109,16 +108,8 @@ def main(args):
                 #predicted_ids = predicted_classes
                 #orig_probs = torch.tensor([x['predicted_class_confidence'] for x in batch]).to(device)
                 
-                #target_classes = torch.tensor([x['target_class'] for x in batch]).to(device)
-                if is_embedding_attribution(method) and args.embedding_attributions is not None and len(args.embedding_attributions) > 0:
-                    # attribution as sum over specified embeddings
-                    attributions = [[x[1] for x in attr] for attr in [[x[f"attribution_{embedding}"] for embedding in args.embedding_attributions] for x in batch]]
-                    # sum over embeddings for each entry in the list
-                    attributions = [[sum(x) for x in zip(*attr)] for attr in attributions]
-                
-                else:        
-                    attributions = [[x[1] for x in attr] for attr in [x['attribution'] for x in batch]]
-
+                # get the attributions
+                attributions = [[expl[1] for expl in attr] for attr in [x['attribution'] for x in batch]]
 
                 for percentage in percentages:
                     rationale_mask = select_rationales(attributions, input_ids, attention_mask, percentage)
@@ -152,13 +143,13 @@ if __name__ == '__main__':
     parser.add_argument('--max_length', type=int, default=512, help='Maximum sequence length for tokenization')
     parser.add_argument('--num_examples', type=int, default=-1, help='Number of examples to process (-1 for all)')
     #parser.add_argument('--methods', type=str, default='', help='Comma-separated list of attribution methods to use')
-    parser.add_argument('--embedding_attributions', nargs='+', default=[], help='List of embeddings to attribute the prediction to')
+    #parser.add_argument('--embedding_attributions', nargs='+', default=[], help='List of embeddings to attribute the prediction to')
     parser.add_argument('--mask_type', type=str, default='mask', help='Type of token to mask for perturbation')
     parser.add_argument('--percentages', type=str, default='0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9', help='Comma-separated list of percentages for selecting rationales')
     #parser.add_argument('--output_path', type=str, default='baseline_saliency_results/all_methods_1000_examples_512/Attention_perturbation_results.json', help='Directory to save the output files')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
-    parser.add_argument('--bcos', action='store_true', help='Use BCOS model')
-    parser.add_argument('--b', type=float, default=2.0, help='BCOS parameter')
+    #parser.add_argument('--bcos', action='store_true', help='Use BCOS model')
+    #parser.add_argument('--b', type=float, default=2.0, help='BCOS parameter')
 
     args = parser.parse_args()
     main(args)

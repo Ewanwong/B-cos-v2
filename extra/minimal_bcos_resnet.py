@@ -46,6 +46,8 @@ class BcosConv2d(nn.Conv2d):
                 divisor_override=1,  # sum, not avg
             )
             + 1e-6  # stabilizing term
+
+            
         ).sqrt_()
 
         if self.groups > 1:

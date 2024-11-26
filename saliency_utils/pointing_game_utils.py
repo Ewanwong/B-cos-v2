@@ -35,7 +35,7 @@ class GridPointingGame:
             num_labels,
             split='test',
             split_ratio=0.5,
-            embedding_attributions=None,
+            #embedding_attributions=None,
             load_pointing_game_examples_path=None,
             save_pointing_game_examples_path=None,
             num_segments=2,
@@ -44,8 +44,8 @@ class GridPointingGame:
             num_instances=-1,
             min_confidence=0.5,
             random_seed=42,
-            bcos=False,
-            b=2.0,
+            #bcos=False,
+            #b=2.0,
     ):
         """
         Filter and truncate dataset
@@ -55,8 +55,8 @@ class GridPointingGame:
         assert num_segments == 2, "Currently only support 2 segments"
         config = AutoConfig.from_pretrained(model_name_or_path, num_labels=num_labels)
         config.num_labels = num_labels
-        config.bcos = bcos,
-        config.b = b
+        #config.bcos = bcos,
+        #config.b = b
         config.output_attentions = True
         self.model = BertForSequenceClassification.load_from_pretrained(model_name_or_path, config=config)
         self.tokenizer = BertTokenizer.from_pretrained(model_name_or_path)
@@ -71,9 +71,9 @@ class GridPointingGame:
         self.max_length = max_length
         self.num_instances = num_instances
         self.min_confidence = min_confidence
-        self.embedding_attributions = embedding_attributions
-        self.bcos = bcos
-        self.b = b
+        #self.embedding_attributions = embedding_attributions
+        #self.bcos = bcos
+        #self.b = b
 
 
         # detect string None
@@ -404,11 +404,9 @@ class GridPointingGame:
         # output: positive saliency scores for the correct segment, whether the largest attribution is assigned to the correct segment
         
         # when not specified or any element in the list is not a key in the explanation, use the overall attribution
-        if self.embedding_attributions is None or len(self.embedding_attributions) == 0 or not all([f"attribution_{embedding}" in explanation.keys() for embedding in self.embedding_attributions]):
-            attribution = explanation['attribution']
-        else:
-            # sum over embeddings for each entry in the list
-            attribution = [[explanation['attribution'][i][0], sum([explanation[f"attribution_{embedding}"][i][1] for embedding in self.embedding_attributions])] for i in range(len(explanation['attribution']))]
+        
+        attribution = explanation['attribution']
+
 
         attribution_scores = [attr[1] for attr in attribution if attr[0]!=self.tokenizer.pad_token and attr[0]!=self.tokenizer.cls_token and attr[0]!=self.tokenizer.sep_token]
         if len(attribution_scores) != 2 * self.max_length - 4:
@@ -501,19 +499,3 @@ class GridPointingGame:
 
 
                 
-if __name__ == "__main__":
-    pointing_game = GridPointingGame(
-        model_name_or_path="models/bert_base_imdb_512",
-        dataset="imdb",
-        num_labels=2,
-        split='test',
-        split_ratio=0.5,
-        load_pointing_game_examples_path=None,
-        save_pointing_game_examples_path="pointing_game_data/all_orders_first.json",
-        num_segments=2,
-        max_length=256,
-        batch_size=16,
-        num_instances=1000,
-        min_confidence=0.5,
-        random_seed=42,
-    )

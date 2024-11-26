@@ -162,11 +162,16 @@ class BertSelfAttention(DetachableModule):
                 f"heads ({config.num_attention_heads})"
             )
         self.bcos = config.bcos if hasattr(config, "bcos") else False
+        self.bcos_attention = config.bcos_attention if hasattr(config, "bcos_attention") else False
         self.num_attention_heads = config.num_attention_heads
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
         ## bcos no bias term
-        if self.bcos:
+        if self.bcos and self.bcos_attention:
+            self.query = BcosLinear(config.hidden_size, self.all_head_size)
+            self.key = BcosLinear(config.hidden_size, self.all_head_size)
+            self.value = BcosLinear(config.hidden_size, self.all_head_size)
+        elif not self.bcos_attention:
             self.query = nn.Linear(config.hidden_size, self.all_head_size, bias=False)
             self.key = nn.Linear(config.hidden_size, self.all_head_size, bias=False)
             self.value = nn.Linear(config.hidden_size, self.all_head_size, bias=False)
@@ -874,23 +879,26 @@ class BertPreTrainedModel(BcosUtilMixin, PreTrainedModel):
         def is_bcos(config):
             return hasattr(config, "bcos") and config.bcos
         orig_config = AutoConfig.from_pretrained(model_name_or_path)
+        if config is not None:
+            config.update(kwargs)
+        orig_config.update(kwargs)
         if not is_bcos(config) and not is_bcos(orig_config):
             print(f"Loading conventional model {model_name_or_path} to a conventional model")
-            return cls.from_pretrained(model_name_or_path, config=config, **kwargs) 
+            return cls.from_pretrained(model_name_or_path, config=config) 
         elif is_bcos(config) and is_bcos(orig_config):
             print(f"Loading Bcos model {model_name_or_path} to a Bcos model")
-            return cls.from_pretrained(model_name_or_path, config=orig_config, **kwargs)
+            return cls.from_pretrained(model_name_or_path, config=orig_config)
         elif not is_bcos(config) and is_bcos(orig_config):
             print("Why would you convert a Bcos model to a conventional model?")
             raise ValueError("Cannot convert a Bcos model to a conventional model")
         else:
             # initialize a model
-            bcos_model = cls(config, **kwargs)
+            bcos_model = cls(config)
             # load the weights
             conventional_config = copy.deepcopy(config)
             conventional_config.bcos = False
 
-            conventional_model = cls.load_from_pretrained(model_name_or_path, config=conventional_config, **kwargs)
+            conventional_model = cls.from_pretrained(model_name_or_path, config=conventional_config, **kwargs)
             print(f"Converting conventional model {model_name_or_path} to Bcos model")
             conventional_model_dict = dict(conventional_model.named_parameters())
             bcos_model_dict = dict(bcos_model.named_parameters())
@@ -1805,15 +1813,19 @@ class BertForSequenceClassification(BertPreTrainedModel):
                     loss = loss_fct(logits, labels)
             elif self.config.problem_type == "single_label_classification":
                 ## bcos
-                if not self.config.bce:
+                if not hasattr(self.config, "bce") or not self.config.bce:
                     loss_fct = CrossEntropyLoss()
                     loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
                 else:
-                    loss_fct = BCEWithLogitsLoss()
+                    loss_fct = nn.BCELoss()
+                    sigmoid = nn.Sigmoid()
                     # convert labels to one hot
                     targets = nn.functional.one_hot(labels, num_classes=self.num_labels).float()
                     targets.requires_grad = False
-                    loss = loss_fct(logits, targets)
+                    if not hasattr(self.config, "relative_logits") or not self.config.relative_logits:
+                        loss = loss_fct(sigmoid(logits), targets)
+                    else:
+                        loss = loss_fct(sigmoid(logits+math.log(1/(self.num_labels-1))), targets)
             elif self.config.problem_type == "multi_label_classification":
                 loss_fct = BCEWithLogitsLoss()
                 loss = loss_fct(logits, labels)
