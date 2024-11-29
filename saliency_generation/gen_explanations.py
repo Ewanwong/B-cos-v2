@@ -49,7 +49,7 @@ def main(args):
     config.output_attentions = True
     config.num_labels = args.num_labels
     #print(config)
-    model = BertForSequenceClassification.load_from_pretrained(args.model_dir, config=config)
+    model = BertForSequenceClassification.load_from_pretrained(args.model_dir, config=config, output_attentions=True)
     model.eval()
     model.to(device)
 

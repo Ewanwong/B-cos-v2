@@ -53,6 +53,7 @@ def main():
     parser.add_argument('--bce', action='store_true', help='Use bce loss instead of cross entropy loss')
     parser.add_argument('--relative_logits', action='store_true', help='Use relative logit')
     parser.add_argument('--bcos_attention', action='store_true', help='Use BCOS attention')
+    parser.add_argument('--no_embedding_norm', action='store_true', help='Do not normalize the embeddings')
     args = parser.parse_args()
 
     # create output directory if it doesn't exist
@@ -113,6 +114,7 @@ def main():
     config.bce = args.bce
     config.relative_logits = args.relative_logits
     config.bcos_attention = args.bcos_attention
+    config.no_embedding_norm = args.no_embedding_norm
     model = BertForSequenceClassification.load_from_pretrained(args.model_name_or_path, config=config)
     model.to(device)
 

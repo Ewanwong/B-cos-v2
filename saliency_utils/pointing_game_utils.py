@@ -21,7 +21,6 @@ EXPLANATION_METHODS = {
     "IntegratedGradients": GradientNPropabationExplainer,
     "Occlusion": OcclusionExplainer,
     "ShapleyValue": ShapleyValueExplainer,
-    "GradientShap": ShapleyValueExplainer,
     "DeepLiftShap": ShapleyValueExplainer,
     "KernelShap": ShapleyValueExplainer,
     "Lime": LimeExplainer,
@@ -58,7 +57,7 @@ class GridPointingGame:
         #config.bcos = bcos,
         #config.b = b
         config.output_attentions = True
-        self.model = BertForSequenceClassification.load_from_pretrained(model_name_or_path, config=config)
+        self.model = BertForSequenceClassification.load_from_pretrained(model_name_or_path, config=config, output_attentions=True)
         self.tokenizer = BertTokenizer.from_pretrained(model_name_or_path)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)

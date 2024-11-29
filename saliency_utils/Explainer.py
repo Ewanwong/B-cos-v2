@@ -555,7 +555,7 @@ class GradientNPropabationExplainer(BaseExplainer):
             elif self.method == 'IntegratedGradients' or self.method == 'DeepLift':
                 if self.baseline is not None:
                     token_baseline_ids = torch.ones_like(input_ids) * self.baseline 
-                    baselines = self.model.model.bert.embeddings(token_baseline_ids)
+                    baselines = self.model.model.bert.embeddings(input_ids=token_baseline_ids, position_ids=position_ids, token_type_ids=token_type_ids)
                 else:
                     baselines = None
                 attributions = self.explainer.attribute(
@@ -814,14 +814,7 @@ class LimeExplainer(BaseExplainer):
         self.random_seed = random_seed
         self.prob_func = BertProbabilityModelWrapper(self.model, self.tokenizer, batch_size=batch_size)
         self.device = model.device
-        if baseline == 'zero':
-            self.baseline = None
-        elif baseline == 'mask':
-            self.baseline = self.tokenizer.mask_token_id
-        elif baseline == 'pad':
-            self.baseline = self.tokenizer.pad_token_id
-        else:
-            raise ValueError(f"Invalid baseline {baseline}")
+
                
     def explain(self, text, example_index, label=None, num_classes=None, class_label=None, max_length=512, only_predicted_classes=False):
         # single instance

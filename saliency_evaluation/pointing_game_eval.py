@@ -8,8 +8,8 @@ from bcos_lm.models.modeling_bert import BertForSequenceClassification
 import os
 
 EXPLANATION_METHODS = {
-    #"Bcos": BcosExplainer,
-    #"Attention": AttentionExplainer,
+    "Bcos": BcosExplainer,
+    "Attention": AttentionExplainer,
     "Saliency": GradientNPropabationExplainer,
     "DeepLift": GradientNPropabationExplainer,
     "GuidedBackprop": GradientNPropabationExplainer,

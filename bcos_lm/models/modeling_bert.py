@@ -82,7 +82,7 @@ class BertEmbeddings(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-
+        self.config = config
         ## bcos
         if hasattr(config, "bcos") and config.bcos and hasattr(config, "b"):
             norm = norms.NoBias(norms.DetachableLayerNorm)  
@@ -148,7 +148,7 @@ class BertEmbeddings(nn.Module):
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
         ## bcos
-        if self.bcos:
+        if self.bcos and (not hasattr(self.config, "no_embedding_norm") or not self.config.no_embedding_norm):
             embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=-1)
         return embeddings
 
@@ -171,7 +171,7 @@ class BertSelfAttention(DetachableModule):
             self.query = BcosLinear(config.hidden_size, self.all_head_size)
             self.key = BcosLinear(config.hidden_size, self.all_head_size)
             self.value = BcosLinear(config.hidden_size, self.all_head_size)
-        elif not self.bcos_attention:
+        elif self.bcos and not self.bcos_attention:
             self.query = nn.Linear(config.hidden_size, self.all_head_size, bias=False)
             self.key = nn.Linear(config.hidden_size, self.all_head_size, bias=False)
             self.value = nn.Linear(config.hidden_size, self.all_head_size, bias=False)
@@ -884,7 +884,7 @@ class BertPreTrainedModel(BcosUtilMixin, PreTrainedModel):
         orig_config.update(kwargs)
         if not is_bcos(config) and not is_bcos(orig_config):
             print(f"Loading conventional model {model_name_or_path} to a conventional model")
-            return cls.from_pretrained(model_name_or_path, config=config) 
+            return cls.from_pretrained(model_name_or_path, config=orig_config) 
         elif is_bcos(config) and is_bcos(orig_config):
             print(f"Loading Bcos model {model_name_or_path} to a Bcos model")
             return cls.from_pretrained(model_name_or_path, config=orig_config)
