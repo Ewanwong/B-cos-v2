@@ -1,11 +1,14 @@
 import argparse
 import json
+import math
 import logging
 import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Subset
 from transformers import (BertTokenizer, AutoConfig, AdamW,
                           get_linear_schedule_with_warmup)
 from bcos_lm.models.new_modeling_bert import BertForSequenceClassification
+from saliency_utils.Explainer import BertEmbeddingModelWrapper
+from bcos_lm.losses import ConsecutiveLoss
 from datasets import load_dataset
 import numpy as np
 from sklearn.metrics import accuracy_score
@@ -54,6 +57,8 @@ def main():
     parser.add_argument('--relative_logits', action='store_true', help='Use relative logit')
     parser.add_argument('--bcos_attention', action='store_true', help='Use BCOS attention')
     parser.add_argument('--no_embedding_norm', action='store_true', help='Do not normalize the embeddings')
+    parser.add_argument('--alpha', type=float, default=0.1, help='Regularization coefficient')
+    parser.add_argument('--reg_loss', type=str, default='auto_corr', help='Regularization loss type')
     args = parser.parse_args()
 
     # create output directory if it doesn't exist
@@ -117,6 +122,7 @@ def main():
     config.no_embedding_norm = args.no_embedding_norm
     model = BertForSequenceClassification.load_from_pretrained(args.model_name_or_path, config=config)
     model.to(device)
+    embedding_model = BertEmbeddingModelWrapper(model)
 
     # Tokenization function
     def tokenize_function(examples):
@@ -165,52 +171,91 @@ def main():
     scheduler = get_linear_schedule_with_warmup(optimizer,
                                                 num_warmup_steps=warmup_steps,
                                                 num_training_steps=total_steps)
+    # initialize the loss function
+    reg_loss_fn = ConsecutiveLoss(args.reg_loss)
+    task_loss_fn = torch.nn.BCELoss() if args.bce else torch.nn.CrossEntropyLoss()
+    sigmoid = torch.nn.Sigmoid()
 
     # Accuracy evaluation function
     def evaluate(model, dataloader):
         model.eval()
+        embedding_model = BertEmbeddingModelWrapper(model)
         predictions, true_labels = [], []
+        regularization_losses = []
 
         for batch in dataloader:
             batch = {k: v.to(device) for k, v in batch.items()}
 
-            with torch.no_grad():
-                outputs = model(**batch)
+            embeddings = model.bert.embeddings(input_ids=batch['input_ids'])
+            embeddings.requires_grad_()
+            outputs = embedding_model(embeddings, attention_mask=batch['attention_mask'])
 
-            logits = outputs.logits.detach().cpu().numpy()
+            logits = outputs.detach().cpu().numpy()
             label_ids = batch['labels'].to('cpu').numpy()
 
             predictions.extend(np.argmax(logits, axis=1))
             true_labels.extend(label_ids)
 
+            with embedding_model.model.explanation_mode():
+                target_outputs = torch.gather(outputs, 1, batch['labels'].view(-1, 1))
+                grads = torch.autograd.grad(torch.unbind(target_outputs), embeddings, create_graph=True, retain_graph=True)[0]
+                attributions = (grads * embeddings).sum(dim=-1)
+                reg_loss = reg_loss_fn(attributions)
+                regularization_losses.append(reg_loss.detach().item())
+        val_reg_loss = np.mean(regularization_losses)
         accuracy = accuracy_score(true_labels, predictions)
         model.train()
-        return accuracy
+        return accuracy, val_reg_loss
 
     # Early stopping parameters
     early_stopping_patience = args.early_stopping_patience if args.early_stopping_patience != -1 else np.inf
     best_accuracy = 0.0
     evaluations_no_improve = 0
     global_step = 0
-
+    
     # Training loop
     for epoch_i in range(args.num_train_epochs):
         logging.info(f"\n======== Epoch {epoch_i + 1} / {args.num_train_epochs} ========")
         logging.info("Training...")
+
         total_loss = 0
+        total_task_loss = 0
+        total_reg_loss = 0
         model.train()
 
         for step, batch in tqdm(enumerate(train_dataloader)):
-            
+
             global_step += 1
             batch = {k: v.to(device) for k, v in batch.items()}
-
+            labels = batch['labels']
             optimizer.zero_grad()
 
-            outputs = model(**batch)
-            loss = outputs.loss
-            total_loss += loss.item()
+            embeddings = model.bert.embeddings(input_ids=batch['input_ids'])
+            embeddings.requires_grad_()
+            outputs = embedding_model(embeddings, attention_mask=batch['attention_mask'])
 
+            # compute task loss
+            if not args.bce:
+                task_loss = task_loss_fn(outputs.view(-1, config.num_labels), labels.view(-1))
+            else:
+                targets = torch.nn.functional.one_hot(labels, num_classes=config.num_labels).float()
+                targets.requires_grad = False
+                if not args.relative_logits:
+                    task_loss = task_loss_fn(sigmoid(outputs), targets)
+                else:
+                    task_loss = task_loss_fn(sigmoid(outputs+math.log(1/(config.num_labels-1))), targets)
+            total_task_loss += task_loss.item()
+
+            # compute regularization loss
+            with model.explanation_mode():
+                target_outputs = torch.gather(outputs, 1, batch['labels'].view(-1, 1))
+                grads = torch.autograd.grad(torch.unbind(target_outputs), embeddings, create_graph=True, retain_graph=True)[0]
+                attributions = (grads * embeddings).sum(dim=-1)
+                reg_loss = reg_loss_fn(attributions)
+
+            total_reg_loss += reg_loss.item()
+            loss = task_loss + args.alpha * reg_loss
+            total_loss += loss.detach().item()
             loss.backward()
 
             #torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -220,8 +265,9 @@ def main():
             # Evaluate the model at specified steps
             if args.eval_steps and global_step % args.eval_steps == 0:
                 logging.info(f"\nStep {global_step}: running evaluation...")
-                val_accuracy = evaluate(model, validation_dataloader)
+                val_accuracy, val_reg_loss = evaluate(model, validation_dataloader)
                 logging.info(f"Validation Accuracy at step {global_step}: {val_accuracy:.4f}")
+                logging.info(f"Validation Regularization Loss at step {global_step}: {val_reg_loss:.4f}")
 
                 # Check for early stopping
                 if val_accuracy > best_accuracy:
@@ -254,8 +300,9 @@ def main():
         # Evaluate at the end of each epoch if eval_steps is not set
         if not args.eval_steps:
             logging.info("Running Validation at the end of the epoch...")
-            val_accuracy = evaluate(model, validation_dataloader)
+            val_accuracy, val_reg_loss = evaluate(model, validation_dataloader)
             logging.info(f"Validation Accuracy: {val_accuracy:.4f}")
+            logging.info(f"Validation Regularization Loss: {val_reg_loss:.4f}")
 
             # Check for early stopping
             if val_accuracy > best_accuracy:
@@ -293,8 +340,9 @@ def main():
 
     # Test evaluation
     logging.info("\nRunning Test Evaluation...")
-    test_accuracy = evaluate(model, test_dataloader)
+    test_accuracy, test_reg_loss = evaluate(model, test_dataloader)
     logging.info(f"Test Accuracy: {test_accuracy:.4f}")
+    logging.info(f"Test Regularization Loss: {test_reg_loss:.4f}")
 
 if __name__ == '__main__':
     main()

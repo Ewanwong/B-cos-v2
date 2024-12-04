@@ -230,6 +230,8 @@ class BcosExplainer(BaseExplainer):
 
         # Extract embeddings
         embeddings = self.model.model.bert.embeddings(input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids)
+        # Set requires_grad to True for embeddings we want to compute attributions for
+        embeddings.requires_grad_()
 
         # Get the model's predictions
         with torch.no_grad():
@@ -238,8 +240,7 @@ class BcosExplainer(BaseExplainer):
         # confidence for each class
         confidences = torch.nn.functional.softmax(outputs, dim=-1).detach().cpu().numpy().tolist()
 
-        # Set requires_grad to True for embeddings we want to compute attributions for
-        embeddings.requires_grad_()
+
         
         input_ids_cpu = input_ids.detach().cpu().numpy().tolist()
         all_explained_labels = []
@@ -254,18 +255,20 @@ class BcosExplainer(BaseExplainer):
         if only_predicted_classes:
             all_explained_labels = [predicted_classes]
 
-        all_saliency_l2_results = [[] for _ in range(batch_size)]
-        all_saliency_mean_results = [[] for _ in range(batch_size)]
+        all_saliency_ixg_l2_results = [[] for _ in range(batch_size)]
+        all_saliency_ixg_mean_results = [[] for _ in range(batch_size)]
+
         for explained_labels in all_explained_labels:
             # activate explanation mode
             with self.model.model.explanation_mode():
-                explainer = InputXGradient(self.model)
-                attributions = explainer.attribute(
+                explainer_ixg = InputXGradient(self.model)
+                attributions_ixg = explainer_ixg.attribute(
                     inputs=(embeddings),
                     target=explained_labels,
                     additional_forward_args=(attention_mask,)
                 )
-            attributions_all = attributions
+
+            attributions_ixg_all = attributions_ixg
             for i in range(batch_size):
                 tokens = self.tokenizer.convert_ids_to_tokens(input_ids_cpu[i])
                 class_index = explained_labels[i]
@@ -276,14 +279,13 @@ class BcosExplainer(BaseExplainer):
                     true_label = None                    
 
                 # Compute saliency metrics for each token
-                saliency_l2 = torch.norm(attributions_all[i:i+1], dim=-1).detach().cpu().numpy()[0]
-                saliency_mean = attributions_all[i:i+1].mean(dim=-1).detach().cpu().numpy()[0]
-
+                saliency_ixg_l2 = torch.norm(attributions_ixg_all[i:i+1], dim=-1).detach().cpu().numpy()[0]
+                saliency_ixg_mean = attributions_ixg_all[i:i+1].mean(dim=-1).detach().cpu().numpy()[0]
                 # Collect results for the current example and class
                 # skip padding tokens
                 tokens = [token for token in tokens if token != self.tokenizer.pad_token]
                 real_length = len(tokens)
-                result_l2 = {
+                result_ixg_l2 = {
                     'index': example_indices[i],
                     'text': self.tokenizer.decode(input_ids[i], skip_special_tokens=True),
                         #'tokens': tokens,
@@ -292,11 +294,11 @@ class BcosExplainer(BaseExplainer):
                     'predicted_class_confidence': confidences[i][predicted_class],
                     'target_class': class_index,
                     'target_class_confidence': confidences[i][class_index],
-                    'method': f"{self.method}_L2",
-                    'attribution': list(zip(tokens, saliency_l2.tolist()[:real_length])),
+                    'method': f"{self.method}_ixg_L2",
+                    'attribution': list(zip(tokens, saliency_ixg_l2.tolist()[:real_length])),
                 }
 
-                result_mean = {
+                result_ixg_mean = {
                     'index': example_indices[i],
                     'text': self.tokenizer.decode(input_ids[i], skip_special_tokens=True),
                         #'tokens': tokens,
@@ -305,12 +307,14 @@ class BcosExplainer(BaseExplainer):
                     'predicted_class_confidence': confidences[i][predicted_class],
                     'target_class': class_index,
                     'target_class_confidence': confidences[i][class_index],
-                    'method': f"{self.method}_mean",
-                    "attribution": list(zip(tokens, saliency_mean.tolist()[:real_length])),
+                    'method': f"{self.method}_ixg_mean",
+                    "attribution": list(zip(tokens, saliency_ixg_mean.tolist()[:real_length])),
                 }
-                all_saliency_l2_results[i].append(result_l2)
-                all_saliency_mean_results[i].append(result_mean)
-        saliency_results = {f"{self.method}_L2": all_saliency_l2_results, f"{self.method}_mean": all_saliency_mean_results}
+                all_saliency_ixg_l2_results[i].append(result_ixg_l2)
+                all_saliency_ixg_mean_results[i].append(result_ixg_mean)
+
+        #saliency_results = {f"{self.method}_ixg_L2": all_saliency_ixg_l2_results, f"{self.method}_ixg_mean": all_saliency_ixg_mean_results, f"{self.method}_gradient_L2": all_saliency_gradient_l2_results, f"{self.method}_gradient_mean": all_saliency_gradient_mean_results}
+        saliency_results = {f"{self.method}_ixg_mean": all_saliency_ixg_mean_results}
         return saliency_results
     
     def explain(self, texts, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512, only_predicted_classes=False):
@@ -518,6 +522,8 @@ class GradientNPropabationExplainer(BaseExplainer):
 
         # Extract embeddings
         embeddings = self.model.model.bert.embeddings(input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids)
+        # Set requires_grad to True for embeddings we want to compute attributions for
+        embeddings.requires_grad_()
 
         # Get the model's predictions
         with torch.no_grad():
@@ -526,8 +532,7 @@ class GradientNPropabationExplainer(BaseExplainer):
         # confidence for each class
         confidences = torch.nn.functional.softmax(outputs, dim=-1).detach().cpu().numpy().tolist()
 
-        # Set requires_grad to True for embeddings we want to compute attributions for
-        embeddings.requires_grad_()
+
 
         input_ids_cpu = input_ids.detach().cpu().numpy().tolist()
         all_explained_labels = []
@@ -852,7 +857,7 @@ class LimeExplainer(BaseExplainer):
             'example_id': example_index,
             'text': self.tokenizer.decode(input_ids[0], skip_special_tokens=True),
             #'tokens': explanation.features,
-            'true_label': label,
+            'true_label': label[0],
             'predicted_class': predicted_class,
             'predicted_class_confidence': confidences[0][predicted_class],
             'target_class': explained_label,

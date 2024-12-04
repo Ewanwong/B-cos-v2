@@ -3,7 +3,7 @@ from torch.utils.data import Subset
 import numpy as np
 from datasets import load_dataset
 from transformers import BertTokenizer, AutoConfig
-from bcos_lm.models.modeling_bert import BertForSequenceClassification
+from bcos_lm.models.new_modeling_bert import BertForSequenceClassification
 import json
 import random
 import os

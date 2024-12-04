@@ -4,7 +4,7 @@ import argparse
 import torch
 from torch.utils.data import DataLoader
 from transformers import BertTokenizer, AutoConfig
-from bcos_lm.models.modeling_bert import BertForSequenceClassification
+from bcos_lm.models.new_modeling_bert import BertForSequenceClassification
 from datasets import load_dataset
 import numpy as np
 import json
@@ -68,7 +68,7 @@ def main(args):
     # Initialize the explainer
     all_methods = EXPLANATION_METHODS.keys()
     if args.methods:
-        attribution_methods = args.methods   
+        attribution_methods = args.methods.replace(' ', '').split(',')   
     else:
         attribution_methods = all_methods  # Use all methods if none specified
 
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     parser.add_argument('--max_length', type=int, default=512, help='Maximum sequence length for tokenization')
     parser.add_argument('--baseline', type=str, default='pad', help='Baseline for the attribution methods, select from zero, mask, pad')    
     parser.add_argument('--num_examples', type=int, default=1000, help='Number of examples to process (-1 for all)')
-    parser.add_argument('--methods', nargs='+', default=None, help='List of attribution methods to use')
+    parser.add_argument('--methods', type=str, default=None, help='List of attribution methods to use separated by commas')
     parser.add_argument('--output_dir', type=str, default='baseline_saliency_results/all_methods_1000_examples_512', help='Directory to save the output files')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     parser.add_argument('--shap_n_samples', type=int, default=25, help='Number of samples for Shapley Value Sampling')

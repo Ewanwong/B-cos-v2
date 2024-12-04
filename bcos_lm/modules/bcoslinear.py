@@ -6,15 +6,16 @@ NOTE: In case you're wondering why the convolution models do not use
 the same thing would be very error-prone during development and testing!
 """
 from typing import Union
-
+import math
+import torch
 import torch.linalg as LA
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
-from .common import DetachableModule
+from .common import DetachableModule, DynamicMultiplication
 
-__all__ = ["NormedLinear", "BcosLinear"]
+__all__ = ["NormedLinear", "BcosLinear", "BcosGELUActivation"]
 
 
 class NormedLinear(nn.Linear):
@@ -138,3 +139,25 @@ class BcosLinear(DetachableModule):
         s += ","
 
         return s.format(**self.__dict__)
+    
+class BcosGELUActivation(DetachableModule):
+    """
+    Original Implementation of the GELU activation function in Google BERT repo when initially created. For
+    information: OpenAI GPT's GELU is slightly different (and gives slightly different results): 0.5 * x * (1 +
+    torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3)))) This is now written in C in nn.functional
+    Also see the Gaussian Error Linear Units paper: https://arxiv.org/abs/1606.08415
+    """
+
+    def __init__(self, use_gelu_python: bool = False):
+        super().__init__()     
+        self.act = self._gelu_python
+
+
+    def _gelu_python(self, input: Tensor) -> Tensor:
+        dynamic_scaling = 0.5 * (1.0 + torch.erf(input / math.sqrt(2.0)))
+        if self.detach:
+            dynamic_scaling = dynamic_scaling.detach()
+        return input * dynamic_scaling
+
+    def forward(self, input: Tensor) -> Tensor:
+        return self.act(input)

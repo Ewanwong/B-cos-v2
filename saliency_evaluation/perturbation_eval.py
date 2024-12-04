@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
 from transformers import BertTokenizer, AutoConfig
-from bcos_lm.models.modeling_bert import BertForSequenceClassification
+from bcos_lm.models.new_modeling_bert import BertForSequenceClassification
 from saliency_utils.perturbation_utils import select_rationales, compute_comprehensiveness, compute_sufficiency, compute_perturbation_auc
 from argparse import ArgumentParser
 import json
