@@ -314,7 +314,7 @@ class BcosExplainer(BaseExplainer):
                 all_saliency_ixg_mean_results[i].append(result_ixg_mean)
 
         #saliency_results = {f"{self.method}_ixg_L2": all_saliency_ixg_l2_results, f"{self.method}_ixg_mean": all_saliency_ixg_mean_results, f"{self.method}_gradient_L2": all_saliency_gradient_l2_results, f"{self.method}_gradient_mean": all_saliency_gradient_mean_results}
-        saliency_results = {f"{self.method}_ixg_mean": all_saliency_ixg_mean_results}
+        saliency_results = {f"{self.method}_ixg_L2": all_saliency_ixg_l2_results, f"{self.method}_ixg_mean": all_saliency_ixg_mean_results}
         return saliency_results
     
     def explain(self, texts, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512, only_predicted_classes=False):
@@ -854,7 +854,7 @@ class LimeExplainer(BaseExplainer):
                 seed=self.random_seed,
             )
         result = {
-            'example_id': example_index,
+            'index': example_index[0],
             'text': self.tokenizer.decode(input_ids[0], skip_special_tokens=True),
             #'tokens': explanation.features,
             'true_label': label[0],

@@ -8,7 +8,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, LongTensor
 
-__all__ = ["BcosModelBase", "ExplanationModeContextManager", "BcosSequential"]
+__all__ = ["BcosModelBase", "ExplanationModeContextManager", "BcosSequential", "DynamicMultiplication", "DynamicMatrixMultiplication"]
 
 
 class ExplanationModeContextManager:

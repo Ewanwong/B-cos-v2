@@ -3,9 +3,11 @@ import json
 import logging
 import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Subset
-from transformers import (BertTokenizer, AutoConfig, AdamW,
+from transformers import (AutoTokenizer, AutoConfig, AdamW,
                           get_linear_schedule_with_warmup)
 from bcos_lm.models.new_modeling_bert import BertForSequenceClassification
+from bcos_lm.models.new_modeling_roberta import RobertaForSequenceClassification
+from bcos_lm.models.new_modeling_distilbert import DistilBertForSequenceClassification
 from datasets import load_dataset
 import numpy as np
 from sklearn.metrics import accuracy_score
@@ -106,7 +108,15 @@ def main():
     dataset = load_dataset(args.dataset_name)
 
     # Initialize the tokenizer and model
-    tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
+    if "distilbert" in args.model_name_or_path.lower():
+        Model = DistilBertForSequenceClassification
+    elif "roberta" in args.model_name_or_path.lower():
+        Model = RobertaForSequenceClassification
+    elif "bert" in args.model_name_or_path.lower():
+        Model = BertForSequenceClassification
+    else:
+        raise ValueError("Model not supported")
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     config = AutoConfig.from_pretrained(args.model_name_or_path, num_labels=args.num_labels)
     config.num_labels = args.num_labels
     config.bcos = args.bcos
@@ -115,7 +125,7 @@ def main():
     config.relative_logits = args.relative_logits
     config.bcos_attention = args.bcos_attention
     config.no_embedding_norm = args.no_embedding_norm
-    model = BertForSequenceClassification.load_from_pretrained(args.model_name_or_path, config=config)
+    model = Model.load_from_pretrained(args.model_name_or_path, config=config)
     model.to(device)
 
     # Tokenization function
@@ -287,8 +297,8 @@ def main():
             break
 
     # Load the best model
-    model = BertForSequenceClassification.load_from_pretrained(args.output_dir, config=config)
-    tokenizer = BertTokenizer.from_pretrained(args.output_dir)
+    model = Model.load_from_pretrained(args.output_dir, config=config)
+    tokenizer = AutoTokenizer.from_pretrained(args.output_dir)
     model.to(device)
 
     # Test evaluation

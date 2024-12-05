@@ -7,7 +7,7 @@ from typing import Tuple, Optional
 
 
 
-__all__ = ["DetachableModule", "BcosSequential", "DynamicMultiplication"]
+__all__ = ["DetachableModule", "BcosSequential"]
 
 
 class DetachableModule(nn.Module):
@@ -74,18 +74,3 @@ class _DynamicMultiplication(torch.autograd.Function):
         return grad_output * input, grad_output * weight, None
 
 
-class DynamicMultiplication(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.state = {"fixed_weights": False}
-
-    def set_explanation_mode(self, on: bool = True):
-        self.state["fixed_weights"] = on
-
-    @property
-    def is_in_explanation_mode(self):
-        # just for testing
-        return self.state["fixed_weights"]
-
-    def forward(self, *, weight: "Tensor", input: "Tensor") -> "Tensor":
-        return _DynamicMultiplication.apply(weight, input, self.state)
