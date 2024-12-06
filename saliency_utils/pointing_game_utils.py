@@ -2,8 +2,10 @@ import torch
 from torch.utils.data import Subset
 import numpy as np
 from datasets import load_dataset
-from transformers import BertTokenizer, AutoConfig
+from transformers import AutoTokenizer, AutoConfig
 from bcos_lm.models.new_modeling_bert import BertForSequenceClassification
+from bcos_lm.models.new_modeling_roberta import RobertaForSequenceClassification
+from bcos_lm.models.new_modeling_distilbert import DistilBertForSequenceClassification
 import json
 import random
 import os
@@ -52,13 +54,21 @@ class GridPointingGame:
         Sample and create pointing game instances 
         """
         assert num_segments == 2, "Currently only support 2 segments"
+
+        # load the model and tokenizer
+        if "roberta" in model_name_or_path.lower():
+            Model = RobertaForSequenceClassification
+        elif "distilbert" in model_name_or_path.lower():
+            Model = DistilBertForSequenceClassification
+        elif "bert" in model_name_or_path.lower():
+            Model = BertForSequenceClassification
         config = AutoConfig.from_pretrained(model_name_or_path, num_labels=num_labels)
         config.num_labels = num_labels
         #config.bcos = bcos,
         #config.b = b
         config.output_attentions = True
-        self.model = BertForSequenceClassification.load_from_pretrained(model_name_or_path, config=config, output_attentions=True)
-        self.tokenizer = BertTokenizer.from_pretrained(model_name_or_path)
+        self.model = Model.load_from_pretrained(model_name_or_path, config=config, output_attentions=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
         self.model.eval()
@@ -407,8 +417,8 @@ class GridPointingGame:
         attribution = explanation['attribution']
 
 
-        attribution_scores = [attr[1] for attr in attribution if attr[0]!=self.tokenizer.pad_token and attr[0]!=self.tokenizer.cls_token and attr[0]!=self.tokenizer.sep_token]
-        if len(attribution_scores) != 2 * self.max_length - 4:
+        attribution_scores = [attr[1] for attr in attribution if attr[0]!=self.tokenizer.pad_token and attr[0]!=self.tokenizer.cls_token and attr[0]!=self.tokenizer.sep_token and attr[0]!=self.tokenizer.bos_token and attr[0]!=self.tokenizer.eos_token]
+        if len(attribution_scores) != 2 * self.max_length - 4 and len(attribution_scores) != 2 * self.max_length - 5:
             print(f"Warning: the length of the attribution scores is not correct: {len(attribution_scores)}")
         sep_position = len(attribution_scores) // 2
         # find the largest attribution position

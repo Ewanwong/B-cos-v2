@@ -1,7 +1,9 @@
 import torch
 from torch.utils.data import DataLoader
-from transformers import BertTokenizer, AutoConfig
+from transformers import AutoTokenizer, AutoConfig
 from bcos_lm.models.new_modeling_bert import BertForSequenceClassification
+from bcos_lm.models.new_modeling_roberta import RobertaForSequenceClassification
+from bcos_lm.models.new_modeling_distilbert import DistilBertForSequenceClassification
 from saliency_utils.perturbation_utils import select_rationales, compute_comprehensiveness, compute_sufficiency, compute_perturbation_auc
 from argparse import ArgumentParser
 import json
@@ -47,12 +49,18 @@ def main(args):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')    
 
     # Load tokenizer and model
-    tokenizer = BertTokenizer.from_pretrained(args.model_dir)
+    if "distilbert" in args.model_dir.lower():
+        Model = DistilBertForSequenceClassification
+    elif "roberta" in args.model_dir.lower():
+        Model = RobertaForSequenceClassification
+    elif "bert" in args.model_dir.lower():
+        Model = BertForSequenceClassification
+    tokenizer = AutoTokenizer.from_pretrained(args.model_dir)
     config = AutoConfig.from_pretrained(args.model_dir, num_labels=args.num_labels)
     config.output_attentions = True
     config.num_labels = args.num_labels
     #print(config)
-    model = BertForSequenceClassification.load_from_pretrained(args.model_dir, config=config).to(device)
+    model = Model.load_from_pretrained(args.model_dir, config=config).to(device)
     model.eval()
     if args.mask_type == "mask":
         mask_token_id = tokenizer.mask_token_id

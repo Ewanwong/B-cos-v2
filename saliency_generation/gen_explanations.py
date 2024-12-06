@@ -3,8 +3,10 @@ from saliency_utils.utils import set_random_seed, split_dataset
 import argparse
 import torch
 from torch.utils.data import DataLoader
-from transformers import BertTokenizer, AutoConfig
+from transformers import AutoTokenizer, AutoConfig
 from bcos_lm.models.new_modeling_bert import BertForSequenceClassification
+from bcos_lm.models.new_modeling_roberta import RobertaForSequenceClassification
+from bcos_lm.models.new_modeling_distilbert import DistilBertForSequenceClassification
 from datasets import load_dataset
 import numpy as np
 import json
@@ -17,7 +19,7 @@ EXPLANATION_METHODS = {
     "Attention": AttentionExplainer,
     "Saliency": GradientNPropabationExplainer,
     "DeepLift": GradientNPropabationExplainer,
-    "GuidedBackprop": GradientNPropabationExplainer,
+    #"GuidedBackprop": GradientNPropabationExplainer,
     "InputXGradient": GradientNPropabationExplainer,
     "IntegratedGradients": GradientNPropabationExplainer,
     "Occlusion": OcclusionExplainer,
@@ -42,6 +44,12 @@ def main(args):
     set_random_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Load pre-trained BERT model and tokenizer
+    if "distilbert" in args.model_dir.lower():
+        Model = DistilBertForSequenceClassification
+    elif "roberta" in args.model_dir.lower():
+        Model = RobertaForSequenceClassification
+    elif "bert" in args.model_dir.lower():
+        Model = BertForSequenceClassification
     config = AutoConfig.from_pretrained(args.model_dir, num_labels=args.num_labels)
     #config.bcos = args.bcos
     #config.b = args.b
@@ -49,11 +57,11 @@ def main(args):
     config.output_attentions = True
     config.num_labels = args.num_labels
     #print(config)
-    model = BertForSequenceClassification.load_from_pretrained(args.model_dir, config=config, output_attentions=True)
+    model = Model.load_from_pretrained(args.model_dir, config=config, output_attentions=True)
     model.eval()
     model.to(device)
 
-    tokenizer = BertTokenizer.from_pretrained(args.model_dir)
+    tokenizer = AutoTokenizer.from_pretrained(args.model_dir)
 
     # Load a dataset from HuggingFace datasets library
     dataset = load_dataset(args.dataset_name, split=args.split)

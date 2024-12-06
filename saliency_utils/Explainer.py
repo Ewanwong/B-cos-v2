@@ -19,21 +19,55 @@ class BertEmbeddingModelWrapper(torch.nn.Module):
 
     def forward(self, embeddings, attention_mask=None):
         #embeddings = token_embeddings + position_embeddings + token_type_embeddings
-        extended_attention_mask = self.model.get_extended_attention_mask(
-            attention_mask, embeddings.shape[:2], embeddings.device
-        )
 
+        head_mask = self.model.get_head_mask(None, self.model.config.num_hidden_layers)
         #head_mask = [None] * self.model.config.num_hidden_layers
-        head_mask = self.model.get_head_mask(None, self.model.config.num_hidden_layers) 
-        encoder_outputs = self.model.bert.encoder(
-            embeddings,
-            attention_mask=extended_attention_mask,
-            head_mask=head_mask,
-        )
-        sequence_output = encoder_outputs[0]
-        pooled_output = self.model.bert.pooler(sequence_output) if self.model.bert.pooler is not None else None
-        pooled_output = self.model.dropout(pooled_output)
-        logits = self.model.classifier(pooled_output)
+
+        if hasattr(self.model, "distilbert"):
+            encoder_outputs = self.model.distilbert.transformer(
+                embeddings,
+                attn_mask=attention_mask,
+                head_mask=head_mask,
+            )
+            hidden_state = encoder_outputs[0]
+            pooled_output = hidden_state[:, 0]
+            pooled_output = self.model.pre_classifier(pooled_output)
+            if not self.model.bcos:
+                pooled_output = torch.nn.ReLU()(pooled_output)
+            pooled_output = self.model.dropout(pooled_output) 
+            logits = self.model.classifier(pooled_output)
+
+        elif hasattr(self.model, "roberta"):
+            extended_attention_mask = self.model.get_extended_attention_mask(
+                attention_mask, embeddings.shape[:2],
+            )
+
+            encoder_outputs = self.model.roberta.encoder(
+                embeddings,
+                attention_mask=extended_attention_mask,
+                head_mask=head_mask,
+            )
+            sequence_output = encoder_outputs[0]
+            #sequence_output = self.model.roberta.pooler(sequence_output) if self.model.roberta.pooler is not None else None
+            logits = self.model.classifier(sequence_output)
+
+        elif hasattr(self.model, "bert"):
+            extended_attention_mask = self.model.get_extended_attention_mask(
+                attention_mask, embeddings.shape[:2], embeddings.device
+            )
+
+            encoder_outputs = self.model.bert.encoder(
+                embeddings,
+                attention_mask=extended_attention_mask,
+                head_mask=head_mask,
+            )
+            sequence_output = encoder_outputs[0]
+            pooled_output = self.model.bert.pooler(sequence_output) if self.model.bert.pooler is not None else None
+            pooled_output = self.model.dropout(pooled_output)
+            logits = self.model.classifier(pooled_output)
+        else:
+            raise ValueError("Model not supported")
+
         return logits
 
 
@@ -137,7 +171,8 @@ class BaseExplainer:
             token_type_ids = inputs['token_type_ids']
         else:
             token_type_ids = torch.zeros_like(input_ids)
-            token_type_ids[:, input_ids.tolist().index(self.tokenizer.sep_token_id)] = 1
+            if hasattr(self.model.model, "bert"):
+                token_type_ids[:, input_ids.tolist().index(self.tokenizer.sep_token_id)] = 1
         explanations = self._explain(input_ids=input_ids, attention_mask=attention_mask, position_ids=position_ids, token_type_ids=token_type_ids, example_indices=example_indices, labels=labels, num_classes=num_classes, class_labels=class_labels, only_predicted_classes=only_predicted_classes)
         return explanations
 
@@ -229,7 +264,14 @@ class BcosExplainer(BaseExplainer):
         batch_size = input_ids.shape[0]
 
         # Extract embeddings
-        embeddings = self.model.model.bert.embeddings(input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids)
+        if hasattr(self.model.model, "distilbert"):
+            embeddings = self.model.model.distilbert.embeddings(input_ids=input_ids)
+        elif hasattr(self.model.model, "roberta"):
+            embeddings = self.model.model.roberta.embeddings(input_ids=input_ids, position_ids=None, token_type_ids=token_type_ids)
+        elif hasattr(self.model.model, "bert"):
+            embeddings = self.model.model.bert.embeddings(input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids)
+        else:
+            raise ValueError("Model not supported")
         # Set requires_grad to True for embeddings we want to compute attributions for
         embeddings.requires_grad_()
 
@@ -521,7 +563,12 @@ class GradientNPropabationExplainer(BaseExplainer):
 
 
         # Extract embeddings
-        embeddings = self.model.model.bert.embeddings(input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids)
+        if hasattr(self.model.model, "distilbert"):
+            embeddings = self.model.model.distilbert.embeddings(input_ids=input_ids)
+        elif hasattr(self.model.model, "roberta"):
+            embeddings = self.model.model.roberta.embeddings(input_ids=input_ids, position_ids=None, token_type_ids=token_type_ids)
+        elif hasattr(self.model.model, "bert"):
+            embeddings = self.model.model.bert.embeddings(input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids)
         # Set requires_grad to True for embeddings we want to compute attributions for
         embeddings.requires_grad_()
 
@@ -560,7 +607,12 @@ class GradientNPropabationExplainer(BaseExplainer):
             elif self.method == 'IntegratedGradients' or self.method == 'DeepLift':
                 if self.baseline is not None:
                     token_baseline_ids = torch.ones_like(input_ids) * self.baseline 
-                    baselines = self.model.model.bert.embeddings(input_ids=token_baseline_ids, position_ids=position_ids, token_type_ids=token_type_ids)
+                    if hasattr(self.model.model, "distilbert"):
+                        baselines = self.model.model.distilbert.embeddings(input_ids=token_baseline_ids)
+                    elif hasattr(self.model.model, "roberta"):
+                        baselines = self.model.model.roberta.embeddings(input_ids=token_baseline_ids, position_ids=None, token_type_ids=token_type_ids)
+                    elif hasattr(self.model.model, "bert"):
+                        baselines = self.model.model.bert.embeddings(input_ids=token_baseline_ids, position_ids=position_ids, token_type_ids=token_type_ids)
                 else:
                     baselines = None
                 attributions = self.explainer.attribute(

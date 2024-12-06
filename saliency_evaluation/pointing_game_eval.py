@@ -1,10 +1,6 @@
 from saliency_utils.pointing_game_utils import GridPointingGame
 from saliency_utils.Explainer import BcosExplainer, AttentionExplainer, GradientNPropabationExplainer, OcclusionExplainer, ShapleyValueExplainer, LimeExplainer
 from argparse import ArgumentParser
-import json
-import torch
-from transformers import BertTokenizer, AutoConfig
-from bcos_lm.models.new_modeling_bert import BertForSequenceClassification
 import os
 
 EXPLANATION_METHODS = {
@@ -12,7 +8,7 @@ EXPLANATION_METHODS = {
     "Attention": AttentionExplainer,
     "Saliency": GradientNPropabationExplainer,
     "DeepLift": GradientNPropabationExplainer,
-    "GuidedBackprop": GradientNPropabationExplainer,
+    #"GuidedBackprop": GradientNPropabationExplainer,
     "InputXGradient": GradientNPropabationExplainer,
     "IntegratedGradients": GradientNPropabationExplainer,
     "Occlusion": OcclusionExplainer,

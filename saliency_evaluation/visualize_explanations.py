@@ -3,7 +3,7 @@ import numpy as np
 import json
 from datasets import load_dataset
 from saliency_utils.perturbation_utils import select_rationales
-from transformers import BertTokenizer, AutoConfig
+from transformers import AutoTokenizer, AutoConfig
 
 def visualize_explanation(attribution_result, percentage, tokenizer):
     tokens = [attr[0] for attr in attribution_result['attribution']]
@@ -84,9 +84,9 @@ def visualize_human_explanation(attribution_result, evidence, orig_text, tokeniz
     return sum(label_mask) / len(label_mask)
 
 if __name__ == "__main__":
-    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    explanation_path = "bcos_results/human_agreement_bce_relative_logits_no_embedding_norm/Bcos_explanations.json"
-    method = "Bcos_absolute_mean"
+    tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+    explanation_path = "bcos_results/pointing_game_agnews_bce_no_embedding_norm_gelu_new_implementation_train_100/Bcos_explanations.json"
+    method = "Bcos_absolute_ixg_mean"
     percentage = 0.2
     idx = 10
 
