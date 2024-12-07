@@ -187,9 +187,9 @@ class RobertaSelfAttention(BcosModelBase):
 
         ## bcos no bias term
         if self.bcos and self.bcos_attention:
-            self.query = BcosLinear(config.hidden_size, self.all_head_size)
-            self.key = BcosLinear(config.hidden_size, self.all_head_size)
-            self.value = BcosLinear(config.hidden_size, self.all_head_size)
+            self.query = BcosLinear(config.hidden_size, self.all_head_size, b=config.b)
+            self.key = BcosLinear(config.hidden_size, self.all_head_size, b=config.b)
+            self.value = BcosLinear(config.hidden_size, self.all_head_size, b=config.b)
         elif self.bcos and not self.bcos_attention:
             self.query = nn.Linear(config.hidden_size, self.all_head_size, bias=False)
             self.key = nn.Linear(config.hidden_size, self.all_head_size, bias=False)

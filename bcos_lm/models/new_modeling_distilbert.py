@@ -167,15 +167,15 @@ class MultiHeadSelfAttention(BcosModelBase):
 
         ## bcos no bias term
         if self.bcos and self.bcos_attention:
-            self.q_lin = BcosLinear(config.dim, config.dim)
-            self.k_lin = BcosLinear(config.dim, config.dim)
-            self.v_lin = BcosLinear(config.dim, config.dim)
-            self.out_lin = BcosLinear(config.dim, config.dim)
+            self.q_lin = BcosLinear(config.dim, config.dim, b=config.b)
+            self.k_lin = BcosLinear(config.dim, config.dim, b=config.b)
+            self.v_lin = BcosLinear(config.dim, config.dim, b=config.b)
+            self.out_lin = BcosLinear(config.dim, config.dim, b=config.b)
         elif self.bcos and not self.bcos_attention:
             self.q_lin = nn.Linear(in_features=config.dim, out_features=config.dim, bias=False)
             self.k_lin = nn.Linear(in_features=config.dim, out_features=config.dim, bias=False)
             self.v_lin = nn.Linear(in_features=config.dim, out_features=config.dim, bias=False)
-            self.out_lin = BcosLinear(config.dim, config.dim)
+            self.out_lin = BcosLinear(config.dim, config.dim, b=config.b)
         else:
             self.q_lin = nn.Linear(in_features=config.dim, out_features=config.dim)    
             self.k_lin = nn.Linear(in_features=config.dim, out_features=config.dim)    

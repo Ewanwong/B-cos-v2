@@ -73,7 +73,7 @@ class BcosLinear(nn.Module):
         if self.b == 2:
             dynamic_weights = out.abs() / norm
         else:
-            abs_cos = (out / norm).abs()  # |cos| term
+            abs_cos = (out / norm).abs() + 1e-6  # |cos| term
             dynamic_weights = abs_cos.pow(self.b - 1)
 
         out = self.dynamic_multiplication(weight=dynamic_weights, input=out)
