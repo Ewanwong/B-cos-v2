@@ -103,11 +103,15 @@ class GridPointingGame:
             self.num_instances = len(self.instances[list(self.instances.keys())[0]])
         else: 
             # load and split dataset               
-            dataset = load_dataset(dataset, split=split)
-            if split_ratio is not None:
-                dataset = split_dataset(dataset, split_ratio)
+            dataset = load_dataset(dataset)
+            test_dataset = dataset[split]
+            if "val" in dataset or split_ratio is None:
+                test_dataset = Subset(test_dataset, range(len(test_dataset)))
+            else:
+                test_dataset = split_dataset(test_dataset, split_ratio)
+
             # filter and truncate dataset
-            truncated_dataset = self.truncate_dataset(dataset)
+            truncated_dataset = self.truncate_dataset(test_dataset)
             # compute and sort the confidence of model predictions
             sorted_confidence_results = self.sort_by_confidence(truncated_dataset)
             # sample and create pointing game instances

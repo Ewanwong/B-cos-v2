@@ -104,8 +104,8 @@ def main(args):
                 input_ids = encodings['input_ids'].to(device)        # Shape: [batch_size, seq_length]
                 attention_mask = encodings['attention_mask'].to(device)  # Shape: [batch_size, seq_length]
                 # compute original probs
-                
-                outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+                with torch.no_grad():
+                    outputs = model(input_ids=input_ids, attention_mask=attention_mask)
                 orig_logits = outputs.logits
                 orig_probs = torch.softmax(orig_logits, dim=-1)
                 # gather the predicted class and the probabilities for these classes

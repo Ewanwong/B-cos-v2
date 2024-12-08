@@ -50,16 +50,21 @@ def split_dataset(dataset, ratio):
 
 if __name__ == "__main__":
     set_random_seed(42)
-
+    """
     imdb = load_dataset('imdb')
     imdb_test = split_dataset(imdb['test'], 0.5)
     imdb_length_distribution = calc_distribution(imdb_test, max_length=512)
     with open('imdb_length_distribution.json', 'w') as f:
         json.dump(imdb_length_distribution, f)
-    """
+    
     ag_news = load_dataset('ag_news')
     ag_news_test = split_dataset(ag_news['test'], 0.5)
     ag_news_length_distribution = calc_distribution(ag_news_test, max_length=512)
     with open('ag_news_length_distribution.json', 'w') as f:
         json.dump(ag_news_length_distribution, f)
     """
+    hatexplain = load_dataset("agvidit1/hateXplain_processed_dataset")
+    hatexplain_test = hatexplain['test']
+    hatexplain_length_distribution = calc_distribution(hatexplain_test, max_length=512)
+    with open('hatexplain_length_distribution.json', 'w') as f:
+        json.dump(hatexplain_length_distribution, f)

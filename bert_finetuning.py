@@ -148,17 +148,19 @@ def main():
     # Prepare data loaders
     train_dataset = tokenized_datasets['train']
     test_dataset = tokenized_datasets['test']
+    if 'val' in tokenized_datasets:
+        val_dataset = tokenized_datasets['val']
+    else:
+        # Split the test dataset into validation and test sets
+        test_dataset_size = len(test_dataset)
+        indices = list(range(test_dataset_size))
+        split = int(np.floor(args.split_ratio * test_dataset_size))
+        np.random.shuffle(indices)
 
-   # Split the test dataset into validation and test sets
-    test_dataset_size = len(test_dataset)
-    indices = list(range(test_dataset_size))
-    split = int(np.floor(args.split_ratio * test_dataset_size))
-    np.random.shuffle(indices)
+        val_indices, test_indices = indices[:split], indices[split:]
 
-    val_indices, test_indices = indices[:split], indices[split:]
-
-    val_dataset = Subset(test_dataset, val_indices)
-    test_dataset = Subset(test_dataset, test_indices)
+        val_dataset = Subset(test_dataset, val_indices)
+        test_dataset = Subset(test_dataset, test_indices)
 
     train_dataloader = DataLoader(train_dataset, sampler=RandomSampler(train_dataset), batch_size=args.batch_size)
     validation_dataloader = DataLoader(val_dataset, sampler=SequentialSampler(val_dataset), batch_size=args.batch_size)

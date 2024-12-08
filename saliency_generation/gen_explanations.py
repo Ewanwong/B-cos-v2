@@ -2,7 +2,7 @@ from saliency_utils.Explainer import BcosExplainer, AttentionExplainer, Gradient
 from saliency_utils.utils import set_random_seed, split_dataset
 import argparse
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from transformers import AutoTokenizer, AutoConfig
 from bcos_lm.models.new_modeling_bert import BertForSequenceClassification
 from bcos_lm.models.new_modeling_roberta import RobertaForSequenceClassification
@@ -64,14 +64,17 @@ def main(args):
     tokenizer = AutoTokenizer.from_pretrained(args.model_dir)
 
     # Load a dataset from HuggingFace datasets library
-    dataset = load_dataset(args.dataset_name, split=args.split)
-    
-    # If num_examples is specified, take a subset of the dataset
-    if args.split_ratio is not None:
-        dataset = split_dataset(dataset, args.split_ratio)[:args.num_examples]
+    dataset = load_dataset(args.dataset_name)
+    test_dataset = dataset[args.split]
+    if "val" in dataset or args.split_ratio is None:
+        test_dataset = Subset(test_dataset, range(len(test_dataset)))
+    else:
+        test_dataset = split_dataset(test_dataset, args.split_ratio)
+
+    test_dataset = test_dataset[:] if args.num_examples == -1 else test_dataset[:args.num_examples]
 
     # add column index to the dataset
-    dataset['index'] = list(range(len(dataset['text'])))
+    test_dataset['index'] = list(range(len(test_dataset['text'])))
 
     # Initialize the explainer
     all_methods = EXPLANATION_METHODS.keys()
@@ -101,7 +104,7 @@ def main(args):
         #class_labels = [dataset['label']]
         #explanation_results = explainer.explain_dataset(dataset, num_classes=args.num_labels, class_labels=class_labels, batch_size=args.batch_size, max_length=args.max_length)
 
-        explanation_results = explainer.explain_dataset(dataset, num_classes=args.num_labels, batch_size=args.batch_size, max_length=args.max_length, only_predicted_classes=args.only_predicted_classes)
+        explanation_results = explainer.explain_dataset(test_dataset, num_classes=args.num_labels, batch_size=args.batch_size, max_length=args.max_length, only_predicted_classes=args.only_predicted_classes)
         result = explanation_results
 
         # Save the results to a JSON file
