@@ -98,11 +98,19 @@ def main(args):
             # set different percentage of rationales
     
             for idx, batch in tqdm(enumerate(dataloader)):
-                texts = [x['text'] for x in batch]
+                #texts = [x['text'] for x in batch]
                 predicted_classes = torch.tensor([x['predicted_class'] for x in batch]).to(device)
-                encodings = tokenizer(texts, padding=True, truncation=True, max_length=args.max_length, return_tensors='pt')
-                input_ids = encodings['input_ids'].to(device)        # Shape: [batch_size, seq_length]
-                attention_mask = encodings['attention_mask'].to(device)  # Shape: [batch_size, seq_length]
+                input_tokens = [[expl[0] for expl in attr] for attr in [x['attribution'] for x in batch]]
+                input_ids = torch.ones((len(batch), args.max_length), dtype=torch.long) * tokenizer.pad_token_id
+                attention_mask = torch.zeros((len(batch), args.max_length), dtype=torch.long)
+                for i, tokens in enumerate(input_tokens):
+                    input_ids[i, :len(tokens)] = torch.tensor(tokenizer.convert_tokens_to_ids(tokens))
+                    attention_mask[i, :len(tokens)] = 1
+                input_ids = input_ids.to(device)
+                attention_mask = attention_mask.to(device)
+                #encodings = tokenizer(texts, padding=True, truncation=True, max_length=args.max_length, return_tensors='pt')
+                #input_ids = encodings['input_ids'].to(device)        # Shape: [batch_size, seq_length]
+                #attention_mask = encodings['attention_mask'].to(device)  # Shape: [batch_size, seq_length]
                 # compute original probs
                 with torch.no_grad():
                     outputs = model(input_ids=input_ids, attention_mask=attention_mask)

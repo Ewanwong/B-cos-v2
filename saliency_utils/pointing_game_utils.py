@@ -84,7 +84,6 @@ class GridPointingGame:
         #self.bcos = bcos
         #self.b = b
 
-
         # detect string None
         if load_pointing_game_examples_path is None or load_pointing_game_examples_path == "None" or not os.path.exists(load_pointing_game_examples_path):
             load_pointing_game_examples_path = None
@@ -93,6 +92,9 @@ class GridPointingGame:
 
         # load or create pointing game instances
         if load_pointing_game_examples_path is not None:
+            directory = ("/").join(load_pointing_game_examples_path.split("/")[:-1])
+            if not os.path.exists(directory):
+                os.makedirs(directory)
             self.instances = self.load_from_file(load_pointing_game_examples_path)
 
             # take num_instances for testing
@@ -124,6 +126,9 @@ class GridPointingGame:
 
     @staticmethod           
     def save_to_file(data, path):
+        directory = ("/").join(path.split("/")[:-1])
+        if not os.path.exists(directory):
+            os.makedirs(directory)
         with open(path, "w") as f:
             json.dump(data, f, indent=4)
         print(f"Saved data to {path}")
@@ -151,7 +156,8 @@ class GridPointingGame:
         #for text, label in zip(dataset["text"], dataset["label"]):
             tokens = self.tokenizer(text, truncation=True, max_length=self.max_length, padding="max_length")
             if tokens["input_ids"].count(self.tokenizer.pad_token_id) == 0: # Filter out examples with less than max_length tokens
-                truncated_text = self.tokenizer.decode(tokens["input_ids"], skip_special_tokens=True)
+                # do not skip [UNK] tokens
+                truncated_text = self.tokenizer.decode([tok for tok in tokens["input_ids"] if not (tok in self.tokenizer.all_special_ids and tok != self.tokenizer.unk_token_id)], skip_special_tokens=False)
                 texts.append(truncated_text)
                 labels.append(label)
 
@@ -283,7 +289,7 @@ class GridPointingGame:
         for _ in range(self.num_segments):
             valid_classes = [i for i in range(self.num_labels) if class_indexer[i] < len(sorted_output[i]["texts"]) and i not in label]
             if len(valid_classes) == 0:
-                return None, None
+                return None, None, None
             selected_class = random.choice(valid_classes)
             selected_index = class_indexer[selected_class]
             instance.append(sorted_output[selected_class]["texts"][selected_index])
@@ -370,7 +376,6 @@ class GridPointingGame:
                 correct_total_attribution.append([correct_total_attribution1, correct_total_attribution2])
 
             # compute the average positive saliency scores for instance
-
             correct_attribution_per_instance = np.mean(correct_attribution, axis=1).tolist()
             correct_positive_attribution_per_instance = np.mean(correct_positive_attribution, axis=1).tolist()
             correct_largest_attribution_per_instance = np.mean(correct_largest_attribution, axis=1).tolist()
@@ -423,6 +428,7 @@ class GridPointingGame:
 
         attribution_scores = [attr[1] for attr in attribution if attr[0]!=self.tokenizer.pad_token and attr[0]!=self.tokenizer.cls_token and attr[0]!=self.tokenizer.sep_token and attr[0]!=self.tokenizer.bos_token and attr[0]!=self.tokenizer.eos_token]
         if len(attribution_scores) != 2 * self.max_length - 4 and len(attribution_scores) != 2 * self.max_length - 5:
+            print([attr[0] for attr in attribution])
             print(f"Warning: the length of the attribution scores is not correct: {len(attribution_scores)}")
         sep_position = len(attribution_scores) // 2
         # find the largest attribution position
