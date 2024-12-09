@@ -30,25 +30,21 @@ def main(args):
     args.seed = int(args.seed) if args.seed else None
     args.shap_n_samples = int(args.shap_n_samples) if args.shap_n_samples else None
     args.split_ratio = float(args.split_ratio) if args.split_ratio else None
-    #args.embedding_attributions = args.embedding_attributions if len(args.embedding_attributions) != 0 else None
-
+    
     pointing_game = GridPointingGame(
         model_name_or_path=args.model_dir,
         dataset=args.dataset_name,
         num_labels=args.num_labels,
         split=args.split,
         split_ratio=args.split_ratio,
-        #embedding_attributions=args.embedding_attributions,
         load_pointing_game_examples_path=args.load_pointing_game_examples_path,
         save_pointing_game_examples_path=args.save_pointing_game_examples_path,
         num_segments=2,
         max_length=args.max_length,
         batch_size=args.batch_size,
         num_instances=args.num_examples,
-        min_confidence=0.5,
+        min_confidence=0.75,
         random_seed=args.seed,
-        #bcos=args.bcos,
-        #b=args.b,
     )
 
     # Initialize the explainer

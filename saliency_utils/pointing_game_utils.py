@@ -92,9 +92,6 @@ class GridPointingGame:
 
         # load or create pointing game instances
         if load_pointing_game_examples_path is not None:
-            directory = ("/").join(load_pointing_game_examples_path.split("/")[:-1])
-            if not os.path.exists(directory):
-                os.makedirs(directory)
             self.instances = self.load_from_file(load_pointing_game_examples_path)
 
             # take num_instances for testing
@@ -122,13 +119,13 @@ class GridPointingGame:
             #self.instances = self.sample_pointing_game_instances_w_fixed_order(sorted_confidence_results, num_instances)
             # save pointing game instances
             if save_pointing_game_examples_path is not None:
+                directory = ("/").join(save_pointing_game_examples_path.split("/")[:-1])
+                if not os.path.exists(directory):
+                    os.makedirs(directory)
                 self.save_to_file(self.instances, save_pointing_game_examples_path)
 
     @staticmethod           
     def save_to_file(data, path):
-        directory = ("/").join(path.split("/")[:-1])
-        if not os.path.exists(directory):
-            os.makedirs(directory)
         with open(path, "w") as f:
             json.dump(data, f, indent=4)
         print(f"Saved data to {path}")
@@ -209,6 +206,7 @@ class GridPointingGame:
         predictions = []
         confidences = []
         dataloader = batch_loader(dataset, batch_size=self.batch_size, shuffle=False)
+        print("Computing prediction confidence...")
         for batch in tqdm(dataloader):
             inputs = self.tokenizer(batch["text"], truncation=True, max_length=self.max_length, padding="max_length", return_tensors="pt")
             input_ids = inputs["input_ids"].to(self.device)
@@ -277,6 +275,7 @@ class GridPointingGame:
                 instances.append(instance)
                 classes.append(label)
                 confidences.append(confidence)
+        self.num_instances = len(instances)
         dataset = {"index": list(range(len(instances))),"text1": [instance[0] for instance in instances], "text2": [instance[1] for instance in instances], "label1": [label[0] for label in classes], "label2": [label[1] for label in classes], "confidence1": [confidence[0] for confidence in confidences], "confidence2": [confidence[1] for confidence in confidences]}
         print(f"Number of pointing game instances: {len(instances)}")
         return dataset
@@ -310,7 +309,7 @@ class GridPointingGame:
             explainer = EXPLANATION_METHODS[method](model=model, tokenizer=tokenizer) 
         return explainer
     
-    def run_analysis(self, method_name, n_samples=None, load_explanations_path=None, save_explanations_path=None, save_evaluation_results_path=None, baseline='pad', relative=True):
+    def run_analysis(self, method_name, n_samples=None, load_explanations_path=None, save_explanations_path=None, save_evaluation_results_path=None, baseline='pad', relative=False):
         # encode the instances with multiple segments
         # compute the saliency scores for each segment for each class
         # look at how much positive saliency is assigned to the correct class; and whether the largest attribution is assigned to the correct class
@@ -323,6 +322,7 @@ class GridPointingGame:
         else:
             explainer = self.initialize_explainer(method=method_name, model=self.model, tokenizer=self.tokenizer, baseline=baseline, n_samples=n_samples, relative=relative)
             explanations = self.explain_instances(explainer, save_explanations_path)
+            
         evaluation_results = self.evaluate_explanations(explanations, save_evaluation_results_path)
         return evaluation_results
 
@@ -335,6 +335,9 @@ class GridPointingGame:
         class_labels = [self.instances['label1'], self.instances['label2']]
         explanations = explainer.explain_hybrid_documents_dataset(self.instances, num_classes=self.num_labels, batch_size=self.batch_size, class_labels=class_labels, max_length=2 * self.max_length-1)
         if save_explanations_path is not None:
+            directory = ("/").join(save_explanations_path.split("/")[:-1])
+            if not os.path.exists(directory):
+                os.makedirs(directory)
             self.save_to_file(explanations, save_explanations_path)
         return explanations
 
@@ -422,13 +425,12 @@ class GridPointingGame:
         # output: positive saliency scores for the correct segment, whether the largest attribution is assigned to the correct segment
         
         # when not specified or any element in the list is not a key in the explanation, use the overall attribution
-        
         attribution = explanation['attribution']
 
 
         attribution_scores = [attr[1] for attr in attribution if attr[0]!=self.tokenizer.pad_token and attr[0]!=self.tokenizer.cls_token and attr[0]!=self.tokenizer.sep_token and attr[0]!=self.tokenizer.bos_token and attr[0]!=self.tokenizer.eos_token]
         if len(attribution_scores) != 2 * self.max_length - 4 and len(attribution_scores) != 2 * self.max_length - 5:
-            print([attr[0] for attr in attribution])
+            #print([attr[0] for attr in attribution])
             print(f"Warning: the length of the attribution scores is not correct: {len(attribution_scores)}")
         sep_position = len(attribution_scores) // 2
         # find the largest attribution position

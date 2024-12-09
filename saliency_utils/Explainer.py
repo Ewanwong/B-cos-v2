@@ -329,8 +329,7 @@ class BcosExplainer(BaseExplainer):
                 real_length = len(tokens)
                 result_ixg_l2 = {
                     'index': example_indices[i],
-                    'text': self.tokenizer.decode(input_ids[i], skip_special_tokens=True),
-                        #'tokens': tokens,
+                    'text': self.tokenizer.decode([t for t in input_ids[i] if not (t in self.tokenizer.all_special_ids and t != self.tokenizer.unk_token_id)], skip_special_tokens=False),
                     'true_label': true_label,
                     'predicted_class': predicted_class,
                     'predicted_class_confidence': confidences[i][predicted_class],
@@ -342,8 +341,7 @@ class BcosExplainer(BaseExplainer):
 
                 result_ixg_mean = {
                     'index': example_indices[i],
-                    'text': self.tokenizer.decode(input_ids[i], skip_special_tokens=True),
-                        #'tokens': tokens,
+                    'text': self.tokenizer.decode([t for t in input_ids[i] if not (t in self.tokenizer.all_special_ids and t != self.tokenizer.unk_token_id)], skip_special_tokens=False),
                     'true_label': true_label,
                     'predicted_class': predicted_class,
                     'predicted_class_confidence': confidences[i][predicted_class],
@@ -472,8 +470,7 @@ class AttentionExplainer(BaseExplainer):
             # skip all padding tokens
                 raw_attention_result = {
                     'index': example_indices[i],
-                    'text': self.tokenizer.decode(input_ids[i], skip_special_tokens=True),
-                    #'tokens': tokens[:int(valid_len)],
+                    'text': self.tokenizer.decode([t for t in input_ids[i] if not (t in self.tokenizer.all_special_ids and t != self.tokenizer.unk_token_id)], skip_special_tokens=False),
                     'true_label': true_label,
                     'predicted_class': predicted_class,
                     'predicted_class_confidence': confidences[i][predicted_class],
@@ -484,8 +481,7 @@ class AttentionExplainer(BaseExplainer):
                 }
                 rollout_result = {
                     'index': example_indices[i],
-                    'text': self.tokenizer.decode(input_ids[i], skip_special_tokens=True),
-                    #'tokens': tokens[:int(valid_len)],
+                    'text': self.tokenizer.decode([t for t in input_ids[i] if not (t in self.tokenizer.all_special_ids and t != self.tokenizer.unk_token_id)], skip_special_tokens=False),
                     'true_label': true_label,
                     'predicted_class': predicted_class,
                     'predicted_class_confidence': confidences[i][predicted_class],
@@ -497,8 +493,7 @@ class AttentionExplainer(BaseExplainer):
 
                 flow_result = {
                     'index': example_indices[i],
-                    'text': self.tokenizer.decode(input_ids[i], skip_special_tokens=True),
-                    #'tokens': tokens[:int(valid_len)],
+                    'text': self.tokenizer.decode([t for t in input_ids[i] if not (t in self.tokenizer.all_special_ids and t != self.tokenizer.unk_token_id)], skip_special_tokens=False),
                     'true_label': true_label,
                     'predicted_class': predicted_class,
                     'predicted_class_confidence': confidences[i][predicted_class],
@@ -649,8 +644,7 @@ class GradientNPropabationExplainer(BaseExplainer):
                 real_length = len(tokens)
                 result_l2 = {
                     'index': example_indices[i],
-                    'text': self.tokenizer.decode(input_ids[i], skip_special_tokens=True),
-                        #'tokens': tokens,
+                    'text': self.tokenizer.decode([t for t in input_ids[i] if not (t in self.tokenizer.all_special_ids and t != self.tokenizer.unk_token_id)], skip_special_tokens=False),
                     'true_label': true_label,
                     'predicted_class': predicted_class,
                     'predicted_class_confidence': confidences[i][predicted_class],
@@ -662,8 +656,7 @@ class GradientNPropabationExplainer(BaseExplainer):
 
                 result_mean = {
                     'index': example_indices[i],
-                    'text': self.tokenizer.decode(input_ids[i], skip_special_tokens=True),
-                        #'tokens': tokens,
+                    'text': self.tokenizer.decode([t for t in input_ids[i] if not (t in self.tokenizer.all_special_ids and t != self.tokenizer.unk_token_id)], skip_special_tokens=False),
                     'true_label': true_label,
                     'predicted_class': predicted_class,
                     'predicted_class_confidence': confidences[i][predicted_class],
@@ -751,8 +744,7 @@ class OcclusionExplainer(BaseExplainer):
                 # Collect results for the current example and class
                 result = {
                     'index': example_indices[i],
-                    'text': self.tokenizer.decode(input_ids[i], skip_special_tokens=True),
-                    #'tokens': tokens,
+                    'text': self.tokenizer.decode([t for t in input_ids[i] if not (t in self.tokenizer.all_special_ids and t != self.tokenizer.unk_token_id)], skip_special_tokens=False),
                     'true_label': true_label,
                     'predicted_class': predicted_class,
                     'predicted_class_confidence': confidences[i][predicted_class],
@@ -772,7 +764,7 @@ class OcclusionExplainer(BaseExplainer):
     
     
 class ShapleyValueExplainer(BaseExplainer):
-    def __init__(self, model, tokenizer, method='ShapleyValue', baseline='zero', n_samples=25):
+    def __init__(self, model, tokenizer, method='ShapleyValue', baseline='pad', n_samples=25):
         self.model = BertModelWrapper(model)
         self.model.eval()
         self.model.to(model.device)
@@ -843,8 +835,7 @@ class ShapleyValueExplainer(BaseExplainer):
                 # Collect results for the current example and class
                 result = {
                     'index': example_indices[i],
-                    'text': self.tokenizer.decode(input_ids[i], skip_special_tokens=True),
-                    #'tokens': tokens,
+                    'text': self.tokenizer.decode([t for t in input_ids[i] if not (t in self.tokenizer.all_special_ids and t != self.tokenizer.unk_token_id)], skip_special_tokens=False),
                     'true_label': true_label,
                     'predicted_class': predicted_class,
                     'predicted_class_confidence': confidences[i][predicted_class],
@@ -907,8 +898,7 @@ class LimeExplainer(BaseExplainer):
             )
         result = {
             'index': example_index[0],
-            'text': self.tokenizer.decode(input_ids[0], skip_special_tokens=True),
-            #'tokens': explanation.features,
+            'text': self.tokenizer.decode([t for t in input_ids[0] if not (t in self.tokenizer.all_special_ids and t != self.tokenizer.unk_token_id)], skip_special_tokens=False),
             'true_label': label[0],
             'predicted_class': predicted_class,
             'predicted_class_confidence': confidences[0][predicted_class],
@@ -956,8 +946,7 @@ class LimeExplainer(BaseExplainer):
             )
             result = {
                 'example_id': example_index[0],
-                'text': self.tokenizer.decode(input_ids[0], skip_special_tokens=True),
-                #'tokens': explanation.features,
+                'text': self.tokenizer.decode([t for t in input_ids[0] if not (t in self.tokenizer.all_special_ids and t != self.tokenizer.unk_token_id)], skip_special_tokens=False),
                 'true_label': None,
                 'predicted_class': predicted_class,
                 'predicted_class_confidence': confidences[0][predicted_class],
