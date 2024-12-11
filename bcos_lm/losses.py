@@ -10,19 +10,20 @@ class ConsecutiveLoss(torch.nn.Module):
         bsz, seq_len = input.shape
         #mean = input.mean(dim=-1)
         real_length = torch.sum(input != 0, dim=-1)
-        for idx in range(1, bsz):
+        for idx in range(bsz):
             single_loss = 0
-            mean = input[idx, :real_length[idx]].mean()
-            for pos in range(1, real_length[idx]):
-                if self.loss_type == 'L1':
-                    single_loss += torch.abs(input[idx, pos] - input[idx, pos-1])
-                elif self.loss_type == 'L2':
-                    single_loss += (input[idx, pos] - input[idx, pos-1]) ** 2
-                elif self.loss_type == 'auto_corr':
-                    single_loss += (input[idx, pos] - mean) * (input[idx, pos-1] - mean)
-                elif self.loss_type == 'neg_sum':
-                    single_loss += -torch.sum(input[idx, pos] * input[idx, pos-1])
-                else:
-                    raise ValueError("Invalid loss type")
+            seq = input[idx, :real_length[idx]]
+            mean = seq.mean()
+            if self.loss_type == 'L1':
+                single_loss = torch.abs(seq[1:] - seq[:-1]).sum()
+            elif self.loss_type == 'L2':
+                single_loss = ((seq[1:] - seq[:-1]) ** 2).sum()
+            elif self.loss_type == 'auto_corr':
+                centered = input[idx, :real_length[idx]] - mean
+                single_loss = -torch.sum(centered[1:] * centered[:-1])
+            elif self.loss_type == 'neg_sum':
+                single_loss += - torch.sum(seq[1:] * seq[:-1])
+            else:
+                raise ValueError("Invalid loss type")            
             loss += single_loss / real_length[idx]        
         return loss / bsz

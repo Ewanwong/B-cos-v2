@@ -4,9 +4,11 @@ import math
 import logging
 import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Subset
-from transformers import (BertTokenizer, AutoConfig, AdamW,
+from transformers import (AutoTokenizer, AutoConfig, AdamW,
                           get_linear_schedule_with_warmup)
 from bcos_lm.models.new_modeling_bert import BertForSequenceClassification
+from bcos_lm.models.new_modeling_roberta import RobertaForSequenceClassification
+from bcos_lm.models.new_modeling_distilbert import DistilBertForSequenceClassification
 from saliency_utils.Explainer import BertEmbeddingModelWrapper
 from bcos_lm.losses import ConsecutiveLoss
 from datasets import load_dataset
@@ -33,6 +35,8 @@ def main():
                         help='Maximum input sequence length after tokenization')
     parser.add_argument('--batch_size', type=int, default=16,
                         help='Batch size for training and evaluation')
+    parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
+                        help='Number of updates steps to accumulate before performing a backward/update pass')
     parser.add_argument('--learning_rate', type=float, default=3e-5,
                         help='Learning rate for the optimizer')
     parser.add_argument('--warmup_steps_or_ratio', type=float, default=0.1,
@@ -110,8 +114,19 @@ def main():
     logging.info(f"Loading {args.dataset_name} dataset...")
     dataset = load_dataset(args.dataset_name)
 
+
     # Initialize the tokenizer and model
-    tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
+
+    if "distilbert" in args.model_name_or_path.lower():
+        Model = DistilBertForSequenceClassification
+    elif "roberta" in args.model_name_or_path.lower():
+        Model = RobertaForSequenceClassification
+    elif "bert" in args.model_name_or_path.lower():
+        Model = BertForSequenceClassification
+    else:
+        raise ValueError("Model not supported")
+    
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     config = AutoConfig.from_pretrained(args.model_name_or_path, num_labels=args.num_labels)
     config.num_labels = args.num_labels
     config.bcos = args.bcos
@@ -120,7 +135,8 @@ def main():
     config.relative_logits = args.relative_logits
     config.bcos_attention = args.bcos_attention
     config.no_embedding_norm = args.no_embedding_norm
-    model = BertForSequenceClassification.load_from_pretrained(args.model_name_or_path, config=config)
+
+    model = Model.load_from_pretrained(args.model_name_or_path, config=config)
     model.to(device)
     embedding_model = BertEmbeddingModelWrapper(model)
 
@@ -142,19 +158,22 @@ def main():
 
 
     # Prepare data loaders
+    # Prepare data loaders
     train_dataset = tokenized_datasets['train']
     test_dataset = tokenized_datasets['test']
+    if 'val' in tokenized_datasets:
+        val_dataset = tokenized_datasets['val']
+    else:
+        # Split the test dataset into validation and test sets
+        test_dataset_size = len(test_dataset)
+        indices = list(range(test_dataset_size))
+        split = int(np.floor(args.split_ratio * test_dataset_size))
+        np.random.shuffle(indices)
 
-   # Split the test dataset into validation and test sets
-    test_dataset_size = len(test_dataset)
-    indices = list(range(test_dataset_size))
-    split = int(np.floor(args.split_ratio * test_dataset_size))
-    np.random.shuffle(indices)
+        val_indices, test_indices = indices[:split], indices[split:]
 
-    val_indices, test_indices = indices[:split], indices[split:]
-
-    val_dataset = Subset(test_dataset, val_indices)
-    test_dataset = Subset(test_dataset, test_indices)
+        val_dataset = Subset(test_dataset, val_indices)
+        test_dataset = Subset(test_dataset, test_indices)
 
     train_dataloader = DataLoader(train_dataset, sampler=RandomSampler(train_dataset), batch_size=args.batch_size)
     validation_dataloader = DataLoader(val_dataset, sampler=SequentialSampler(val_dataset), batch_size=args.batch_size)
@@ -177,21 +196,24 @@ def main():
     sigmoid = torch.nn.Sigmoid()
 
     # Accuracy evaluation function
-    def evaluate(model, dataloader):
-        model.eval()
-        embedding_model = BertEmbeddingModelWrapper(model)
+    def evaluate(embedding_model, dataloader):
+        embedding_model.model.eval()
         predictions, true_labels = [], []
         regularization_losses = []
 
         for batch in dataloader:
             batch = {k: v.to(device) for k, v in batch.items()}
-
-            embeddings = model.bert.embeddings(input_ids=batch['input_ids'])
+            if hasattr(embedding_model.model, 'bert'):
+                embeddings = embedding_model.model.bert.embeddings(input_ids=batch['input_ids'])
+            elif hasattr(embedding_model.model, 'roberta'):
+                embeddings = embedding_model.model.roberta.embeddings(input_ids=batch['input_ids'])
+            elif hasattr(embedding_model.model, 'distilbert'):
+                embeddings = embedding_model.model.distilbert.embeddings(input_ids=batch['input_ids'])
             embeddings.requires_grad_()
             outputs = embedding_model(embeddings, attention_mask=batch['attention_mask'])
 
             logits = outputs.detach().cpu().numpy()
-            label_ids = batch['labels'].to('cpu').numpy()
+            label_ids = batch['labels'].cpu().numpy()
 
             predictions.extend(np.argmax(logits, axis=1))
             true_labels.extend(label_ids)
@@ -202,9 +224,10 @@ def main():
                 attributions = (grads * embeddings).sum(dim=-1)
                 reg_loss = reg_loss_fn(attributions)
                 regularization_losses.append(reg_loss.detach().item())
+
         val_reg_loss = np.mean(regularization_losses)
         accuracy = accuracy_score(true_labels, predictions)
-        model.train()
+        embedding_model.model.train()
         return accuracy, val_reg_loss
 
     # Early stopping parameters
@@ -221,16 +244,27 @@ def main():
         total_loss = 0
         total_task_loss = 0
         total_reg_loss = 0
+        accumulation_steps = 0
         model.train()
 
         for step, batch in tqdm(enumerate(train_dataloader)):
-
-            global_step += 1
+            if accumulation_steps+1 == args.gradient_accumulation_steps:
+                accumulation_steps = 0
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
+                global_step += 1
             batch = {k: v.to(device) for k, v in batch.items()}
             labels = batch['labels']
-            optimizer.zero_grad()
-
-            embeddings = model.bert.embeddings(input_ids=batch['input_ids'])
+            #optimizer.zero_grad()
+            if hasattr(model, 'bert'):
+                embeddings = model.bert.embeddings(input_ids=batch['input_ids'])
+            elif hasattr(model, 'roberta'):
+                embeddings = model.roberta.embeddings(input_ids=batch['input_ids'])
+            elif hasattr(model, 'distilbert'):
+                embeddings = model.distilbert.embeddings(input_ids=batch['input_ids'])
+            else:
+                raise ValueError("Model not supported")
             embeddings.requires_grad_()
             outputs = embedding_model(embeddings, attention_mask=batch['attention_mask'])
 
@@ -244,28 +278,31 @@ def main():
                     task_loss = task_loss_fn(sigmoid(outputs), targets)
                 else:
                     task_loss = task_loss_fn(sigmoid(outputs+math.log(1/(config.num_labels-1))), targets)
+            task_loss = task_loss / args.gradient_accumulation_steps
             total_task_loss += task_loss.item()
-
+            print("task loss", task_loss.item())
             # compute regularization loss
             with model.explanation_mode():
                 target_outputs = torch.gather(outputs, 1, batch['labels'].view(-1, 1))
                 grads = torch.autograd.grad(torch.unbind(target_outputs), embeddings, create_graph=True, retain_graph=True)[0]
                 attributions = (grads * embeddings).sum(dim=-1)
                 reg_loss = reg_loss_fn(attributions)
-
+            reg_loss = reg_loss / args.gradient_accumulation_steps
             total_reg_loss += reg_loss.item()
+            print("reg loss", reg_loss.item())
             loss = task_loss + args.alpha * reg_loss
-            total_loss += loss.detach().item()
+            total_loss += loss.item()
             loss.backward()
 
             #torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-            scheduler.step()
+            #optimizer.step()
+            #scheduler.step()
+            accumulation_steps += 1
 
             # Evaluate the model at specified steps
-            if args.eval_steps and global_step % args.eval_steps == 0:
+            if args.eval_steps and global_step % args.eval_steps == 0 and global_step != 0:
                 logging.info(f"\nStep {global_step}: running evaluation...")
-                val_accuracy, val_reg_loss = evaluate(model, validation_dataloader)
+                val_accuracy, val_reg_loss = evaluate(embedding_model, validation_dataloader)
                 logging.info(f"Validation Accuracy at step {global_step}: {val_accuracy:.4f}")
                 logging.info(f"Validation Regularization Loss at step {global_step}: {val_reg_loss:.4f}")
 
@@ -286,7 +323,7 @@ def main():
                         break
 
             # Save the model at specified steps
-            if args.save_steps and global_step % args.save_steps == 0:
+            if args.save_steps and global_step % args.save_steps == 0 and global_step != 0:
                 checkpoint_dir = os.path.join(args.output_dir, f'checkpoint-{global_step}')
                 if not os.path.exists(checkpoint_dir):
                     os.makedirs(checkpoint_dir)
@@ -295,12 +332,16 @@ def main():
                 logging.info(f"Model checkpoint saved at step {global_step} to {checkpoint_dir}")
 
         avg_train_loss = total_loss / len(train_dataloader)
+        avg_task_loss = total_task_loss / len(train_dataloader)
+        avg_reg_loss = total_reg_loss / len(train_dataloader)
         logging.info(f"Average training loss for epoch {epoch_i + 1}: {avg_train_loss:.4f}")
+        logging.info(f"Average task loss for epoch {epoch_i + 1}: {avg_task_loss:.4f}")
+        logging.info(f"Average regularization loss for epoch {epoch_i + 1}: {avg_reg_loss:.4f}")
 
         # Evaluate at the end of each epoch if eval_steps is not set
         if not args.eval_steps:
             logging.info("Running Validation at the end of the epoch...")
-            val_accuracy, val_reg_loss = evaluate(model, validation_dataloader)
+            val_accuracy, val_reg_loss = evaluate(embedding_model, validation_dataloader)
             logging.info(f"Validation Accuracy: {val_accuracy:.4f}")
             logging.info(f"Validation Regularization Loss: {val_reg_loss:.4f}")
 
@@ -334,13 +375,14 @@ def main():
             break
 
     # Load the best model
-    model = BertForSequenceClassification.load_from_pretrained(args.output_dir, config=config)
-    tokenizer = BertTokenizer.from_pretrained(args.output_dir)
+    model = Model.load_from_pretrained(args.output_dir, config=config)
+    tokenizer = AutoTokenizer.from_pretrained(args.output_dir)
     model.to(device)
+    embedding_model = BertEmbeddingModelWrapper(model)
 
     # Test evaluation
     logging.info("\nRunning Test Evaluation...")
-    test_accuracy, test_reg_loss = evaluate(model, test_dataloader)
+    test_accuracy, test_reg_loss = evaluate(embedding_model, test_dataloader)
     logging.info(f"Test Accuracy: {test_accuracy:.4f}")
     logging.info(f"Test Regularization Loss: {test_reg_loss:.4f}")
 
