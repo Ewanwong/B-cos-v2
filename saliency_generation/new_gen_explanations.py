@@ -4,9 +4,9 @@ import argparse
 import torch
 from torch.utils.data import DataLoader, Subset
 from transformers import AutoTokenizer, AutoConfig
-from bcos_lm.models.new_modeling_bert import BertForSequenceClassification
-from bcos_lm.models.new_modeling_roberta import RobertaForSequenceClassification
-from bcos_lm.models.new_modeling_distilbert import DistilBertForSequenceClassification
+from bcos_lm.models.new_new_modeling_bert import BertForSequenceClassification
+from bcos_lm.models.new_new_modeling_roberta import RobertaForSequenceClassification
+from bcos_lm.models.new_new_modeling_distilbert import DistilBertForSequenceClassification
 from datasets import load_dataset
 import numpy as np
 import json
@@ -132,8 +132,6 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     parser.add_argument('--shap_n_samples', type=int, default=25, help='Number of samples for Shapley Value Sampling')
     parser.add_argument('--only_predicted_classes', action='store_true', help='Only explain the predicted class')
-    #parser.add_argument('--bcos', action='store_true', help='Use Bcos model')
-    #parser.add_argument('--b', type=float, default=2.0, help='Bcos parameter')
     parser.add_argument('--relative', action='store_true', help='explain relative logits')
 
     args = parser.parse_args()

@@ -3,9 +3,9 @@ from torch.utils.data import Subset
 import numpy as np
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoConfig
-from bcos_lm.models.new_modeling_bert import BertForSequenceClassification
-from bcos_lm.models.new_modeling_roberta import RobertaForSequenceClassification
-from bcos_lm.models.new_modeling_distilbert import DistilBertForSequenceClassification
+from bcos_lm.models.new_new_modeling_bert import BertForSequenceClassification
+from bcos_lm.models.new_new_modeling_roberta import RobertaForSequenceClassification
+from bcos_lm.models.new_new_modeling_distilbert import DistilBertForSequenceClassification
 import json
 import random
 import os
@@ -18,7 +18,7 @@ EXPLANATION_METHODS = {
     "Attention": AttentionExplainer,
     "Saliency": GradientNPropabationExplainer,
     "DeepLift": GradientNPropabationExplainer,
-    #"GuidedBackprop": GradientNPropabationExplainer,
+    "GuidedBackprop": GradientNPropabationExplainer,
     "InputXGradient": GradientNPropabationExplainer,
     "IntegratedGradients": GradientNPropabationExplainer,
     "SIG": GradientNPropabationExplainer,
@@ -431,7 +431,7 @@ class GridPointingGame:
 
         attribution_scores = [attr[1] for attr in attribution if attr[0]!=self.tokenizer.pad_token and attr[0]!=self.tokenizer.cls_token and attr[0]!=self.tokenizer.sep_token and attr[0]!=self.tokenizer.bos_token and attr[0]!=self.tokenizer.eos_token]
         if len(attribution_scores) != 2 * self.max_length - 4 and len(attribution_scores) != 2 * self.max_length - 5:
-            #print([attr[0] for attr in attribution])
+
             print(f"Warning: the length of the attribution scores is not correct: {len(attribution_scores)}")
         sep_position = len(attribution_scores) // 2
         # find the largest attribution position
@@ -461,61 +461,6 @@ class GridPointingGame:
         correct_total_attribution = 1 if correct_attribution_ratio > 0.5 else 0
         return correct_largest_attribution, correct_positive_attribution_ratio, correct_num_positive_attribution_ratio, correct_attribution_ratio, correct_total_attribution
         
-
-
-
-
-
-
-
-    def sample_pointing_game_instances_w_fixed_order(self, sorted_output, num_instances=-1):
-        # for each instance, randomly sample n_segments classes that still have unselected examples and select the next example from the class with the highest confidence
-        # each instance contains n_segments segments of text, each corresponding to a different class
-        # output: list of instances (tuple of segments), list of labels (tuple of labels)
-        instances = []
-        classes = []
-        confidences = []
-        class_indexer = {i: 0 for i in range(self.num_labels)}
-        # if num_instances=-1, sample as many instances as possible until no valid instances can be created
-        if num_instances == -1:
-            while True:
-                instance, label, confidence = self.sample_instance_w_fixed_order(sorted_output, class_indexer)
-                if instance is None:
-                    break
-                instances.append(instance)
-                classes.append(label)
-                confidences.append(confidence)
-        else:
-            for _ in range(num_instances):
-                instance, label, confidence = self.sample_instance_w_fixed_order(sorted_output, class_indexer)
-                if instance is None:
-                    break
-                instances.append(instance)
-                classes.append(label)
-                confidences.append(confidence)
-        # reverse order of the instances
-        
-        dataset = {"index": list(range(2*len(instances))),"text1": [instance[0] for instance in instances]+[instance[1] for instance in instances], "text2": [instance[1] for instance in instances]+[instance[0] for instance in instances], "label1": [label[0] for label in classes]+[label[1] for label in classes], "label2": [label[1] for label in classes]+[label[0] for label in classes], "confidence1": [confidence[0] for confidence in confidences]+[confidence[1] for confidence in confidences], "confidence2": [confidence[1] for confidence in confidences]+[confidence[0] for confidence in confidences]}
-        print(f"Number of pointing game instances: {len(instances)}")
-        return dataset
-
-    def sample_instance_w_fixed_order(self, sorted_output, class_indexer):
-        # sample a single instance which consists of n_segments segments of text, each corresponding to a different class
-        instance = []
-        label = []
-        confidence = []
-        for _ in range(self.num_segments):
-            valid_classes = [i for i in range(self.num_labels) if class_indexer[i] < len(sorted_output[i]["texts"]) and i not in label]
-            if len(valid_classes) == 0:
-                return None, None
-            selected_class = 0 if len(label) == 0 else 1
-            selected_index = class_indexer[selected_class]
-            instance.append(sorted_output[selected_class]["texts"][selected_index])
-            label.append(selected_class)
-            confidence.append(sorted_output[selected_class]["confidences"][selected_index])
-            class_indexer[selected_class] += 1
-        return instance, label, confidence
-
 
 
 

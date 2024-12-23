@@ -19,9 +19,10 @@ EXPLANATION_METHODS = {
     "Attention": AttentionExplainer,
     "Saliency": GradientNPropabationExplainer,
     "DeepLift": GradientNPropabationExplainer,
-    "GuidedBackprop": GradientNPropabationExplainer,
+    #"GuidedBackprop": GradientNPropabationExplainer,
     "InputXGradient": GradientNPropabationExplainer,
     "IntegratedGradients": GradientNPropabationExplainer,
+    "SIG": GradientNPropabationExplainer,
     "Occlusion": OcclusionExplainer,
     "ShapleyValue": ShapleyValueExplainer,
     "KernelShap": ShapleyValueExplainer,
@@ -65,7 +66,9 @@ def main(args):
     tokenizer = AutoTokenizer.from_pretrained(args.model_dir)
 
     # Load a dataset from HuggingFace datasets library
-    dataset = load_dataset(args.dataset_name, split=args.split)
+    dataset = load_dataset(args.dataset_name, split=args.split, trust_remote_code=True)
+    if args.num_examples > 0:
+        dataset = dataset[:args.num_examples]
     # change 'review' to 'text' for the dataset
     dataset = {"text": dataset['review'], "label": dataset['label'], "evidences": dataset['evidences']}
 
@@ -126,18 +129,26 @@ def main(args):
             for attribution_result, evidence in zip(correct_attribution_results, correct_evidences):
                 all_input_ids = tokenizer.encode(dataset['text'][attribution_result['index']], add_special_tokens=False)
                 label_mask = [0 for _ in range(len(all_input_ids))]
-                curr_idx = 0
+                
                 for evidence_span in evidence:
-                    span_ids = tokenizer.encode(evidence_span, add_special_tokens=False, max_length=args.max_length, truncation=True)
+                    curr_idx = 0
+                    span_ids = tokenizer.encode(evidence_span, add_special_tokens=False)
+                    span_ids_with_prefix = tokenizer.encode(' '+evidence_span, add_special_tokens=False)
+
                     # locate the span in the input_ids
-                    while curr_idx < len(all_input_ids) - len(span_ids):
-                        if all_input_ids[curr_idx:curr_idx+len(span_ids)] == span_ids:
+                    while curr_idx < len(all_input_ids):
+                        if curr_idx < len(all_input_ids) - len(span_ids) and all_input_ids[curr_idx:curr_idx+len(span_ids)] == span_ids:
                             label_mask[curr_idx:curr_idx+len(span_ids)] = [1 for _ in span_ids]
+                            
+                            break
+                        elif curr_idx < len(all_input_ids) - len(span_ids_with_prefix) and all_input_ids[curr_idx:curr_idx+len(span_ids_with_prefix)] == span_ids_with_prefix:
+                            label_mask[curr_idx:curr_idx+len(span_ids_with_prefix)] = [1 for _ in span_ids_with_prefix]
+                            
                             break
                         curr_idx += 1
-                    curr_idx += len(span_ids)
+                    
                 # get real input ids and label masks
-                if attribution_result['attribution'][0][0] == '[CLS]':
+                if attribution_result['attribution'][0][0] == '[CLS]' or attribution_result['attribution'][0][0] == '<s>':
                     real_length = len([attr[0] for attr in attribution_result['attribution']]) - 2
                 else:
                     real_length = len([attr[0] for attr in attribution_result['attribution']])
@@ -172,7 +183,7 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=1, help='Batch size for DataLoader')
     parser.add_argument('--max_length', type=int, default=512, help='Maximum sequence length for tokenization')
     parser.add_argument('--baseline', type=str, default='pad', help='Baseline for the attribution methods, select from zero, mask, pad')    
-    #parser.add_argument('--num_examples', type=int, default=1000, help='Number of examples to process (-1 for all)')
+    parser.add_argument('--num_examples', type=int, default=-1, help='Number of examples to process (-1 for all)')
     parser.add_argument('--methods', type=str, default=None, help='List of attribution methods to use separated by commas')
     parser.add_argument('--output_dir', type=str, default='baseline_saliency_results/all_methods_1000_examples_512', help='Directory to save the output files')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')

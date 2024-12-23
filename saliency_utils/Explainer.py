@@ -3,6 +3,7 @@ import torch
 from transformers import BertTokenizer, BertForSequenceClassification
 from captum.attr import Saliency, DeepLift, GuidedBackprop, InputXGradient, IntegratedGradients, Occlusion, ShapleyValueSampling, DeepLiftShap, GradientShap, KernelShap 
 from saliency_utils.lime_utils import explain
+from tint.attr import SequentialIntegratedGradients
 from datasets import load_dataset
 import numpy as np
 import json
@@ -354,7 +355,8 @@ class BcosExplainer(BaseExplainer):
                 all_saliency_ixg_mean_results[i].append(result_ixg_mean)
 
         #saliency_results = {f"{self.method}_ixg_L2": all_saliency_ixg_l2_results, f"{self.method}_ixg_mean": all_saliency_ixg_mean_results, f"{self.method}_gradient_L2": all_saliency_gradient_l2_results, f"{self.method}_gradient_mean": all_saliency_gradient_mean_results}
-        saliency_results = {f"{self.method}_ixg_L2": all_saliency_ixg_l2_results, f"{self.method}_ixg_mean": all_saliency_ixg_mean_results}
+        #saliency_results = {f"{self.method}_ixg_L2": all_saliency_ixg_l2_results, f"{self.method}_ixg_mean": all_saliency_ixg_mean_results}
+        saliency_results = {f"{self.method}_ixg_mean": all_saliency_ixg_mean_results}
         return saliency_results
     
     def explain(self, texts, example_indices, labels=None, num_classes=None, class_labels=None, max_length=512, only_predicted_classes=False):
@@ -535,6 +537,8 @@ class GradientNPropabationExplainer(BaseExplainer):
             self.explainer = DeepLift(self.model)
         elif method == 'GuidedBackprop':
             self.explainer = GuidedBackprop(self.model)
+        elif method == 'SIG':
+            self.explainer = SequentialIntegratedGradients(self.model)
         else:
             raise ValueError(f"Invalid method {method}")
         self.device = model.device
@@ -599,7 +603,7 @@ class GradientNPropabationExplainer(BaseExplainer):
                     additional_forward_args=(attention_mask,),
                     abs=False,
                 )
-            elif self.method == 'IntegratedGradients' or self.method == 'DeepLift':
+            elif self.method == 'IntegratedGradients' or self.method == 'DeepLift' or self.method == 'SIG':
                 if self.baseline is not None:
                     token_baseline_ids = torch.ones_like(input_ids) * self.baseline 
                     if hasattr(self.model.model, "distilbert"):
@@ -938,7 +942,7 @@ class LimeExplainer(BaseExplainer):
         # if num_classes is 2, run the explanation only once and generate explanation for the other class with minus attribution scores
 
         for explained_label in all_explained_labels:
-            explanation = explain(' '.join([text1[0], text2[0]]),
+            explanation = explain(self.tokenizer.convert_tokens_to_string(self.tokenizer.convert_ids_to_tokens(input_ids[0])),
                 predict_fn=self.prob_func,
                 class_to_explain=explained_label,
                 tokenizer=tokenize_func,
