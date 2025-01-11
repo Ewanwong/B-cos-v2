@@ -1185,6 +1185,8 @@ class BertForPreTraining(BertPreTrainedModel):
         self.post_init()
 
     def get_output_embeddings(self):
+        if self.bcos:
+            return self.cls.predictions.decoder.linear
         return self.cls.predictions.decoder
 
     def set_output_embeddings(self, new_embeddings):
@@ -1271,12 +1273,18 @@ class BertForPreTraining(BertPreTrainedModel):
                 loss_fct = nn.BCELoss()
                 sigmoid = nn.Sigmoid()
                 # convert labels to one hot
-                targets = nn.functional.one_hot(labels, num_classes=self.self.config.vocab_size).float()
+                valid_mask = labels != -100
+                labels = labels[valid_mask].view(-1)
+                prediction_scores = prediction_scores[valid_mask].view(-1, self.config.vocab_size)
+                targets = nn.functional.one_hot(labels, num_classes=self.config.vocab_size).float()
+                targets.requires_grad = False
+                masked_lm_loss = loss_fct(sigmoid(prediction_scores), targets)
+
+                # convert labels to one hot
                 next_sentence_target = nn.functional.one_hot(next_sentence_label, num_classes=2).float()
                 targets.requires_grad = False
                 next_sentence_target.requires_grad = False
 
-                masked_lm_loss = loss_fct(sigmoid(prediction_scores), targets)
                 next_sentence_loss = loss_fct(sigmoid(seq_relationship_score), next_sentence_target)
                 total_loss = masked_lm_loss + next_sentence_loss
 
@@ -1318,6 +1326,8 @@ class BertLMHeadModel(BertPreTrainedModel, GenerationMixin):
         self.post_init()
 
     def get_output_embeddings(self):
+        if hasattr(self.config, "bcos") and self.config.bcos:
+            return self.cls.predictions.decoder.linear
         return self.cls.predictions.decoder
 
     def set_output_embeddings(self, new_embeddings):
@@ -1487,6 +1497,8 @@ class BertForMaskedLM(BertPreTrainedModel):
         self.post_init()
 
     def get_output_embeddings(self):
+        if hasattr(self.config, "bcos") and self.config.bcos:
+            return self.cls.predictions.decoder.linear
         return self.cls.predictions.decoder
 
     def set_output_embeddings(self, new_embeddings):
@@ -1555,6 +1567,9 @@ class BertForMaskedLM(BertPreTrainedModel):
                 loss_fct = nn.BCELoss()
                 sigmoid = nn.Sigmoid()
                 # convert labels to one hot
+                valid_mask = labels != -100
+                labels = labels[valid_mask].view(-1)
+                prediction_scores = prediction_scores[valid_mask].view(-1, self.config.vocab_size)
                 targets = nn.functional.one_hot(labels, num_classes=self.config.vocab_size).float()
                 targets.requires_grad = False
 

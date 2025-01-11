@@ -1064,6 +1064,8 @@ class RobertaForCausalLM(RobertaPreTrainedModel, GenerationMixin):
         self.post_init()
 
     def get_output_embeddings(self):
+        if self.bcos:
+            return self.lm_head.decoder.linear
         return self.lm_head.decoder
 
     def set_output_embeddings(self, new_embeddings):
@@ -1239,6 +1241,8 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
         self.post_init()
 
     def get_output_embeddings(self):
+        if hasattr(self.config, "bcos") and self.config.bcos:
+            return self.lm_head.decoder.linear
         return self.lm_head.decoder
 
     def set_output_embeddings(self, new_embeddings):
@@ -1306,9 +1310,11 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
                 loss_fct = nn.BCELoss()
                 sigmoid = nn.Sigmoid()
                 # convert labels to one hot
+                valid_mask = labels != -100
+                labels = labels[valid_mask].view(-1)
+                prediction_scores = prediction_scores[valid_mask].view(-1, self.config.vocab_size)
                 targets = nn.functional.one_hot(labels, num_classes=self.config.vocab_size).float()
                 targets.requires_grad = False
-
                 masked_lm_loss = loss_fct(sigmoid(prediction_scores), targets)
 
 

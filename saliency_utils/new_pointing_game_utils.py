@@ -366,7 +366,8 @@ class GridPointingGame:
                 # find the explanations which predicts label1 and label2
                 explanation1 = method_explanations[idx][0]
                 explanation2 = method_explanations[idx][1]
-
+                predicted_class = explanation1['predicted_class']
+                
                 assert explanation1['target_class'] == label1
                 assert explanation2['target_class'] == label2
 

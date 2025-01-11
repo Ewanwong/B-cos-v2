@@ -143,7 +143,8 @@ def main(args):
             sufficiency_auc = compute_perturbation_auc(percentages, sufficiency_scores)
             perturbation_results[method]["comprehensiveness_auc"] = comprehensiveness_auc
             perturbation_results[method]["sufficiency_auc"] = sufficiency_auc
-
+            print(f"Comprehensiveness AUC: {comprehensiveness_auc}")
+            print(f"Sufficiency AUC: {sufficiency_auc}")
         output_path = explanation_path.replace('explanations.json', 'perturbation_results.json')
         with open(output_path, 'w') as f:
             json.dump(perturbation_results, f, indent=4)

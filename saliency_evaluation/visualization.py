@@ -71,12 +71,40 @@ def print_importance_dataset(explanation_path, method, save_path, no_cls_sep=Fal
     return html
 
 if __name__ == "__main__":
+    import os
     dataset = "hatexplain"
     model = "bert"
-    explanation_path = f"final_results_bcos/pointing_game_{dataset}_{model}_base_bce_b_1_train_all/Bcos_explanations.json"
+   
+    b = "2_5"
+    explanation_path = f"/scratch/yifwang/rerun_results_42/same_set_pointing_game_{dataset}_{model}_bce_different_b_{b}_seed_42_train_all/Bcos_explanations.json"
     method = "Bcos_absolute_ixg_mean"
     no_cls_sep = False
-    save_path = f"pg_{dataset}_{model}_{method}_explanation_b_1_visualization.html"
-    num_examples = 100
+    save_path = f"pg_{dataset}_{model}_explanation_b_{b}_visualization.html"
+    explanation_path = "ablation/perturbation_hatexplain_bert_base_orig_train_all/Bcos_explanations.json"
+    save_path = "visualization_hatexplain/visualization_baseline/hatexplain_bert_bcos_visualization.html"
+    num_examples = -1
 
     html = print_importance_dataset(explanation_path, method, save_path, no_cls_sep=no_cls_sep, num_examples=num_examples)
+    
+    """
+    if os.path.exists(f"visualization_baseline") is False:
+        os.mkdir(f"visualization_baseline")
+    methods = ['decompx', 'Attention', "DeepLift", "InputXGradient", "IntegratedGradients", "KernelShap", "Lime", "Occlusion", "Saliency", "ShapleyValue", "SIG"]
+    attr = {"Attention": ["raw_attention", "attention_rollout", "attention_flow"],
+            "DeepLift": ["DeepLift_L2"],
+            "InputXGradient": ["InputXGradient_mean", "InputXGradient_L2"],
+            "IntegratedGradients": ["IntegratedGradients_mean"],
+            "KernelShap": ["ShapleyValue"],
+            "Lime": ["Lime"],
+            "Occlusion": ["Occlusion"],
+            "Saliency": ["Saliency_L2"],
+            "ShapleyValue": ["ShapleyValue"],
+            "SIG": ["SIG_mean"],
+            "decompx": ["DecompX"],}
+    for method in methods:
+        explanation_path = f"/nethome/yifwang/B-cos-v2/final_results_baseline/perturbation_{dataset}_{model}_train_all/{method}_explanations.json"
+        for m in attr[method]:
+            save_path = f"visualization_baseline/{dataset}_{model}_{method}_{m}_visualization.html"
+            html = print_importance_dataset(explanation_path, m, save_path, no_cls_sep=False, num_examples=-1)
+            print(f"Saved {save_path}")
+    """

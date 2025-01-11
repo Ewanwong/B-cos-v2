@@ -809,6 +809,8 @@ class DistilBertForMaskedLM(DistilBertPreTrainedModel):
         self.distilbert.resize_position_embeddings(new_num_position_embeddings)
 
     def get_output_embeddings(self) -> nn.Module:
+        if hasattr(self.config, "bcos") and self.config.bcos:
+            return self.vocab_projector.linear
         return self.vocab_projector
 
     def set_output_embeddings(self, new_embeddings: nn.Module):
@@ -864,9 +866,12 @@ class DistilBertForMaskedLM(DistilBertPreTrainedModel):
                 loss_fct = nn.BCELoss()
                 sigmoid = nn.Sigmoid()
                 # convert labels to one hot
+                valid_mask = labels != -100
+                labels = labels[valid_mask].view(-1)
+                prediction_scores = prediction_scores[valid_mask].view(-1, self.config.vocab_size)
                 targets = nn.functional.one_hot(labels, num_classes=self.config.vocab_size).float()
                 targets.requires_grad = False
-                mlm_loss = loss_fct(sigmoid(prediction_logits), targets)
+                mlm_loss = loss_fct(sigmoid(prediction_scores), targets)
 
             #mlm_loss = self.mlm_loss_fct(prediction_logits.view(-1, prediction_logits.size(-1)), labels.view(-1))
 

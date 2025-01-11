@@ -108,7 +108,7 @@ class BcosGELUActivation(nn.Module):
     def _gelu_python(self, input: Tensor) -> Tensor:
         dynamic_scaling = 0.5 * (1.0 + torch.erf(input / math.sqrt(2.0)))
         output = self.dynamic_multiplication(weight=dynamic_scaling, input=input)
-        return input * dynamic_scaling
+        return output
 
     def forward(self, input: Tensor) -> Tensor:
         return self.act(input)
